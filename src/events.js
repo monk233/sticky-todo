@@ -5,6 +5,9 @@
 
 const MODIFIER_ONLY = new Set(["Control", "Shift", "Alt", "Meta", "CapsLock", "Dead"]);
 
+/** 两次点击同一行的间隔在此之内，算双击。 */
+const DOUBLE_CLICK_MS = 400;
+
 function extensionOf(file) {
   const name = typeof file.name === "string" ? file.name : "";
   const dot = name.lastIndexOf(".");
@@ -32,6 +35,7 @@ function acceleratorFrom(event) {
 export function createInteraction({ host, store, invoke }) {
   let editorMemory = { key: null, value: null, start: null, end: null };
   let scrollTops = [];
+  let lastTaskClick = { id: null, at: 0 };
 
   // 状态一变就重建整棵 DOM，滚动位置得手动延续。
   const SCROLLABLE = ".groups, .tasks, .sections, .settings__body";
@@ -168,6 +172,8 @@ export function createInteraction({ host, store, invoke }) {
 
     flushEditing(target);
 
+    if (detectTaskDoubleClick(target)) return;
+
     const { action } = target.dataset;
     const id = target.dataset.id;
 
@@ -284,21 +290,33 @@ export function createInteraction({ host, store, invoke }) {
     }
   }
 
-  function handleDoubleClick(event) {
-    const row = event.target.closest(".task");
-    if (row && host.contains(row)) {
-      if (row.classList.contains("is-editing")) return;
-      const id = row.dataset.id;
-      if (id) store.startEdit(id);
-      return;
+  /**
+   * 自己判定「双击任务行」。
+   *
+   * 不用原生 dblclick：它要求两次点击落在同一个节点上，而这个渲染会在第一次
+   * 点击（选中该行）之后就把整行换成新节点，于是双击时灵时不灵 —— 点在文字
+   * 上必然失灵，点在行内空白处才碰巧有效。
+   * 这里只认「同一行、间隔够短」，与节点有没有被重建无关。
+   */
+  function detectTaskDoubleClick(target) {
+    const row = target.closest(".task");
+    const rowId = row && row.dataset.id ? row.dataset.id : null;
+    const now = Date.now();
+
+    if (!rowId || row.classList.contains("is-editing")) {
+      lastTaskClick = { id: null, at: now };
+      return false;
     }
 
-    // 双击分组名等同于点「重命名分组」。
-    const groupRow = event.target.closest(".group");
-    if (groupRow && host.contains(groupRow)) {
-      const id = groupRow.dataset.id;
-      if (id) store.startRenameGroup(id);
+    const isDouble = lastTaskClick.id === rowId && now - lastTaskClick.at < DOUBLE_CLICK_MS;
+    if (isDouble) {
+      lastTaskClick = { id: null, at: now };
+      store.startEdit(rowId);
+      return true;
     }
+
+    lastTaskClick = { id: rowId, at: now };
+    return false;
   }
 
   function handleKeyDown(event) {
@@ -539,7 +557,6 @@ export function createInteraction({ host, store, invoke }) {
   }
 
   host.addEventListener("click", handleClick);
-  host.addEventListener("dblclick", handleDoubleClick);
   host.addEventListener("paste", handlePaste);
   host.addEventListener("focusout", handleFocusOut);
   window.addEventListener("keydown", handleKeyDown);

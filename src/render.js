@@ -178,7 +178,7 @@ function renderTask(task, view, ctx) {
 
   const body = h(
     "div",
-    { class: "task__main", dataset: { action: "focus-task", id: task.id } },
+    { class: "task__main" },
     h("div", { class: "task__text" }, task.text || "（空）"),
     renderThumbs(task, assetUrl),
     renderTaskMeta(task, settings)
@@ -203,7 +203,14 @@ function renderTask(task, view, ctx) {
   if (ui.cursorTaskId === task.id) classes.push("is-cursor");
   if (settings.hideActions) classes.push("is-plain");
 
-  return h("li", { class: classes.join(" "), dataset: { id: task.id } }, check, body, tools);
+  // 整个任务行都是「聚焦这一行」的热区，这样双击行内任何位置都能进入编辑。
+  return h(
+    "li",
+    { class: classes.join(" "), dataset: { action: "focus-task", id: task.id } },
+    check,
+    body,
+    tools
+  );
 }
 
 function groupToolbar(group, view, ctx, { compact = false } = {}) {
