@@ -12,20 +12,28 @@
 - 图片支持拖放、剪贴板粘贴、文件选择三种入口
 - 两种布局：面板（左分组右任务）与列表（单列、分组可折叠）
 - 显示开关：隐藏已完成、已完成置底、隐藏操作按钮、显示创建时间、显示更新时间
-- 三套主题：明亮、暗黑、跟随系统
+- 七套内置主题：默认、极简、纸本便签、流光溢影、液态玻璃、工业粗野、等宽终端，每套自带明暗两套配色
+- 明暗模式：明亮、暗黑、跟随系统
+- 主题可自定义：把 CSS 放进数据目录的 `themes/` 目录即可，界面里能重新加载，不必重启
 - 快捷键：应用内一整套，外加一个全局唤起键
 - 托盘常驻，关闭按钮默认隐藏到托盘，可改为直接退出
 - 开机自启开关
 
 ## 界面
 
-同一份数据、同一套布局，明亮与暗黑两套主题：
+内置七套主题，每套都自带明暗两套配色，在设置里随时切换。下面是其中四套（明亮模式）：
 
-| 明亮 | 暗黑 |
+| 极简 | 工业粗野 |
 | --- | --- |
-| ![明亮主题](docs/images/screenshot-light.png) | ![暗黑主题](docs/images/screenshot-dark.png) |
+| ![极简主题](docs/images/theme-minimal.png) | ![工业粗野主题](docs/images/theme-industrial.png) |
+
+| 液态玻璃 | 流光溢影 |
+| --- | --- |
+| ![液态玻璃主题](docs/images/theme-liquid-glass.png) | ![流光溢影主题](docs/images/theme-sunlit.png) |
 
 任务行里直接显示创建时间与更新时间；带图片的待办会在文字下方显示缩略图。
+
+主题是数据而不是代码：把自己的 CSS 放进数据目录的 `themes/` 目录，界面里点「重新加载主题」就能用上，不需要改程序也不需要重启。
 
 ## 数据存储
 
@@ -92,11 +100,11 @@ cargo build --release
 
 `Cargo.toml` 里把 `custom-protocol` 设成了默认 feature，这一步不能省：Tauri 用它区分「加载嵌入二进制的前端资源」和「连接 devUrl 的开发服务器」。漏掉它构建出的 exe 会一直去连 `http://localhost:1420`，界面是空白的。
 
-产物为 `src-tauri/target/release/sticky-todo.exe`，本机实测 3,534,336 字节（约 3.37 MB）。
+产物为 `src-tauri/target/release/sticky-todo.exe`，本机实测 3,561,472 字节（约 3.40 MB）。
 
 ### 关于体积
 
-- release 产物 3.37 MB，运行只依赖系统自带的 WebView2 运行时，不需要额外安装。
+- release 产物 3.40 MB，运行只依赖系统自带的 WebView2 运行时，不需要额外安装。
 - 未开启 `bundle`，只产出单个 exe；需要安装包时可另行配置 Tauri 的 NSIS 目标。
 - WebView2 运行时由 Windows 11 内置提供，不随产物分发。
 - `src-tauri/Cargo.toml` 的 release 配置为 `opt-level = "s"`、`lto = true`、`strip = true`、`panic = "abort"`、`codegen-units = 1`。
@@ -106,21 +114,23 @@ cargo build --release
 ```
 src/                     前端，无框架、无构建步骤，直接由 Tauri 加载
   index.html
-  style.css              三套主题的 CSS 变量与全部样式
+  style.css              变量契约与全部结构样式（颜色值都在变量里，主题负责覆盖）
   model.js               纯数据投影：过滤、排序、计数、时间格式化
   store.js               唯一的状态持有者与持久化
   render.js              把投影结果渲染成 DOM
   events.js              事件委托与快捷键
-  theme.js               主题解析
+  theme.js               主题清单、加载、变量块提取、应用
   icons.js               内联 SVG
   app.js                 入口装配
   *.test.js              前端单元测试
+  themes/                内置主题，一个 CSS 文件就是一套；也是写自定义主题的参考
 
 src-tauri/
   src/lib.rs             命令、插件、托盘、窗口事件
   src/store.rs           data.json 的原子读写
   src/config.rs          本机数据目录配置
   src/images.rs          图片导入
+  src/themes.rs          自定义主题文件的读取
   capabilities/          前端权限集
 
 docs/superpowers/specs/  设计文档
