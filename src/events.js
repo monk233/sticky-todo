@@ -286,10 +286,19 @@ export function createInteraction({ host, store, invoke }) {
 
   function handleDoubleClick(event) {
     const row = event.target.closest(".task");
-    if (!row || !host.contains(row)) return;
-    if (row.classList.contains("is-editing")) return;
-    const id = row.dataset.id;
-    if (id) store.startEdit(id);
+    if (row && host.contains(row)) {
+      if (row.classList.contains("is-editing")) return;
+      const id = row.dataset.id;
+      if (id) store.startEdit(id);
+      return;
+    }
+
+    // 双击分组名等同于点「重命名分组」。
+    const groupRow = event.target.closest(".group");
+    if (groupRow && host.contains(groupRow)) {
+      const id = groupRow.dataset.id;
+      if (id) store.startRenameGroup(id);
+    }
   }
 
   function handleKeyDown(event) {

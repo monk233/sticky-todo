@@ -16,6 +16,14 @@ export function nowIso() {
   return new Date().toISOString();
 }
 
+const FALLBACK_GROUP_NAME = "未命名";
+
+/** 分组名不能为空：空白一律换成兜底名。 */
+function normalizeGroupName(value) {
+  const trimmed = String(value ?? "").trim();
+  return trimmed === "" ? FALLBACK_GROUP_NAME : trimmed;
+}
+
 function normalizeData(raw) {
   const source = raw ?? {};
   const groups = Array.isArray(source.groups) ? source.groups : [];
@@ -28,7 +36,7 @@ function normalizeData(raw) {
     groups: groups.map((group, index) => ({
       ...group,
       id: group.id ?? uuid(),
-      name: group.name ?? "未命名",
+      name: normalizeGroupName(group.name),
       order: Number.isFinite(group.order) ? group.order : index,
     })),
     tasks: tasks.map((task, index) => ({
@@ -185,7 +193,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     );
     const group = {
       id: uuid(),
-      name,
+      name: normalizeGroupName(name),
       order: maxOrder + 1,
     };
     data.groups.push(group);
@@ -219,8 +227,11 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
       notify();
       return;
     }
-    const next = String(name ?? "").trim();
-    if (next && next !== group.name) {
+    // 分组不能没有名字：清空后提交就保持原来的名字。
+    const typed = String(name ?? "").trim();
+    const next = typed === "" ? normalizeGroupName(group.name) : typed;
+
+    if (next !== group.name) {
       group.name = next;
       scheduleSave();
     }
