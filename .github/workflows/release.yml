@@ -2,8 +2,13 @@ name: 构建并发布
 
 on:
   push:
-    branches: [main]
+    tags:
+      - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 要发布的版本标签，例如 v1.0.1
+        required: true
 
 permissions:
   contents: write
@@ -43,17 +48,17 @@ jobs:
       - name: 发布到 Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: 最新构建
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ inputs.tag || github.ref_name }}
+          generate_release_notes: true
           body: |
-            由 GitHub Actions 在每次推送到 main 时自动构建。
+            下载 `sticky-todo.exe` 直接运行，不需要安装。
 
-            - 提交：${{ github.sha }}
-            - 分支：${{ github.ref_name }}
-            - 构建于：${{ github.run_started_at }}
+            运行依赖系统的 WebView2 运行时，Windows 11 已内置；Windows 10 上
+            如果缺失，需要先装一次 WebView2 Runtime。
 
-            下载 `sticky-todo.exe` 直接运行，不需要安装。运行依赖系统的
-            WebView2 运行时，Windows 11 已内置。
+            产物没有代码签名，首次运行 Windows 可能提示「未知发布者」，
+            选择「更多信息 → 仍要运行」即可。
           files: src-tauri/target/release/sticky-todo.exe
           draft: false
           prerelease: false
