@@ -740,6 +740,9 @@ button {
   backdrop-filter: blur(1px);
 }
 
+/* 面板每次重建都会是新元素，所以入场效果用 transition 而不是 animation：
+   新元素默认就是终态，不会被重播，也不会播到一半被打断。
+   只有真正打开的那一次会带上 is-entering，随后由脚本在下一帧移除。 */
 .settings__panel {
   display: flex;
   flex-direction: column;
@@ -748,18 +751,12 @@ button {
   background: var(--surface);
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow);
-  animation: panel-in 0.16s ease;
+  transition: transform 0.16s ease, opacity 0.16s ease;
 }
 
-@keyframes panel-in {
-  from {
-    transform: translateX(12px);
-    opacity: 0.6;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+.settings__panel.is-entering {
+  transform: translateX(14px);
+  opacity: 0.55;
 }
 
 .settings__head {
@@ -983,7 +980,13 @@ button {
   color: var(--bg);
   font-size: 13px;
   box-shadow: var(--shadow);
-  animation: toast-in 0.18s ease;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+/* 同上：提示条只在第一次出现时淡入，重建时不重播。 */
+.toast.is-entering {
+  transform: translateY(6px);
+  opacity: 0;
 }
 
 .toast--warn {
@@ -994,17 +997,6 @@ button {
 .toast--error {
   background: var(--danger);
   color: #ffffff;
-}
-
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* ==========================================================================

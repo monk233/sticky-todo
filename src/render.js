@@ -411,7 +411,10 @@ function renderSettings(view, ctx) {
     { class: "settings", dataset: { action: "settings-backdrop" } },
     h(
       "div",
-      { class: "settings__panel", dataset: { action: "settings-panel" } },
+      {
+        class: `settings__panel ${ui.settingsFresh ? "is-entering" : ""}`.trim(),
+        dataset: { action: "settings-panel" },
+      },
       h(
         "header",
         { class: "settings__head" },
@@ -619,7 +622,14 @@ function renderToasts(ui) {
     "div",
     { class: "toasts", role: "status", "aria-live": "polite" },
     ui.toasts.map((toast) =>
-      h("div", { class: `toast toast--${toast.kind}`, dataset: { id: String(toast.id) } }, toast.text)
+      h(
+        "div",
+        {
+          class: `toast toast--${toast.kind} ${toast.fresh ? "is-entering" : ""}`.trim(),
+          dataset: { id: String(toast.id) },
+        },
+        toast.text
+      )
     )
   );
 }

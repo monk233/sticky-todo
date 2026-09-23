@@ -31,6 +31,56 @@ function acceleratorFrom(event) {
 
 export function createInteraction({ host, store, invoke }) {
   let editorMemory = { key: null, value: null, start: null, end: null };
+  let scrollTops = [];
+
+  // 状态一变就重建整棵 DOM，滚动位置得手动延续。
+  const SCROLLABLE = ".groups, .tasks, .sections, .settings__body";
+
+  function captureScroll() {
+    scrollTops = Array.from(host.querySelectorAll(SCROLLABLE)).map(
+      (node) => node.scrollTop
+    );
+  }
+
+  function restoreScroll() {
+    const apply = () => {
+      const nodes = Array.from(host.querySelectorAll(SCROLLABLE));
+      nodes.forEach((node, index) => {
+        if (index < scrollTops.length) {
+          node.scrollTop = scrollTops[index];
+        }
+      });
+    };
+    apply();
+    // 重建之后布局可能在同一帧里继续变化，下一帧再对齐一次。
+    requestAnimationFrame(apply);
+  }
+
+  // 入场效果只属于「刚刚打开」那一次：渲染完就清掉标记，并在下一帧移除
+  // 初始状态类，让 transition 跑完。之后任何重建都不会再触发入场。
+  function clearEntering() {
+    const ui = store.getUi();
+
+    if (ui.settingsFresh) {
+      ui.settingsFresh = false;
+      const panel = host.querySelector(".settings__panel.is-entering");
+      if (panel) {
+        requestAnimationFrame(() => panel.classList.remove("is-entering"));
+      }
+    }
+
+    if (ui.toasts.some((toast) => toast.fresh)) {
+      ui.toasts.forEach((toast) => {
+        toast.fresh = false;
+      });
+      const entering = host.querySelectorAll(".toast.is-entering");
+      if (entering.length > 0) {
+        requestAnimationFrame(() => {
+          entering.forEach((node) => node.classList.remove("is-entering"));
+        });
+      }
+    }
+  }
 
   function taskIdNearPosition(x, y) {
     const ratio = window.devicePixelRatio || 1;
@@ -105,7 +155,7 @@ export function createInteraction({ host, store, invoke }) {
         return;
 
       case "open-settings":
-        store.patchUi({ settingsOpen: true, recordingHotkey: false });
+        store.patchUi({ settingsOpen: true, settingsFresh: true, recordingHotkey: false });
         return;
 
       case "close-settings":
@@ -408,7 +458,7 @@ export function createInteraction({ host, store, invoke }) {
     }
 
     node.value = editorMemory.value ?? "";
-    node.focus();
+    node.focus({ preventScroll: true });
 
     const end = editorMemory.end;
     if (Number.isFinite(end)) {
@@ -424,8 +474,16 @@ export function createInteraction({ host, store, invoke }) {
   window.addEventListener("keydown", handleKeyDown);
   registerTauriDragDrop();
 
-  return {
-    beforeRender: captureEditor,
-    afterRender: restoreEditor,
-  };
+  function beforeRender() {
+    captureEditor();
+    captureScroll();
+  }
+
+  function afterRender() {
+    restoreEditor();
+    restoreScroll();
+    clearEntering();
+  }
+
+  return { beforeRender, afterRender };
 }

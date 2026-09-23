@@ -58,6 +58,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     editingGroupId: null,
     confirmDeleteGroupId: null,
     settingsOpen: false,
+    settingsFresh: false,
     recordingHotkey: false,
     hotkeyOk: null,
     autoStart: false,
@@ -72,7 +73,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
   const getDataDir = () => dataDir;
 
   function toast(text, kind = "info") {
-    const entry = { id: ++toastSeq, text, kind };
+    const entry = { id: ++toastSeq, text, kind, fresh: true };
     ui.toasts = [...ui.toasts, entry];
     notify();
     setTimeout(() => {
