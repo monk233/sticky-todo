@@ -39,6 +39,10 @@
 
   --surface-blur: blur(22px) saturate(165%);
 
+  /* --bg 是渐变，反色提示条得自己给一组纯色 */
+  --inverse-bg: rgba(28, 32, 46, 0.92);
+  --inverse-text: #f4f6ff;
+
   --ambient-image: radial-gradient(
       42% 46% at 24% 26%,
       rgba(122, 152, 255, 0.62),
@@ -82,4 +86,7 @@
 
   --ambient-opacity: 0.72;
   --ambient-blend: screen;
+
+  --inverse-bg: rgba(233, 237, 255, 0.94);
+  --inverse-text: #0b1020;
 }

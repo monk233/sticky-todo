@@ -217,6 +217,24 @@ test("工业粗野的扫描线纹理保留了 repeating-linear-gradient", () => 
   assert.ok(css.includes("repeating-linear-gradient"));
 });
 
+test("把 --bg 写成渐变的主题必须自带 --inverse-text", () => {
+  // --bg 允许是渐变，但渐变不能当文字颜色用：反色提示条要有一组纯色兜底。
+  for (const entry of BUILTIN_THEMES) {
+    if (!entry.file) continue;
+
+    const raw = readFileSync(new URL(`./${entry.file}`, import.meta.url), "utf8");
+    const css = extractThemeCss(raw, entry.id);
+
+    for (const block of css.split(/:root\[data-theme=/).slice(1)) {
+      if (!/--bg\s*:\s*[^;]*gradient/.test(block)) continue;
+      assert.ok(
+        /--inverse-text\s*:\s*[^;]+/.test(block),
+        `${entry.id}: --bg 是渐变，却没有给 --inverse-text`
+      );
+    }
+  }
+});
+
 test("流光溢影的纸张噪点是完整的 data URI", () => {
   const css = extractThemeCss(
     readFileSync(new URL("./themes/sunlit.css", import.meta.url), "utf8"),

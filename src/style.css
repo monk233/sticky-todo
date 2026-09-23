@@ -86,6 +86,11 @@
 
   /* 毛玻璃：主题把表面色设成半透明并给出模糊半径即可生效 */
   --surface-blur: none;
+
+  /* 反色提示条。单独列出来是因为 --bg 允许写成渐变，
+     渐变不能直接当文字颜色用。 */
+  --inverse-bg: var(--text);
+  --inverse-text: var(--bg);
 }
 
 :root[data-appearance="dark"] {
@@ -1241,8 +1246,8 @@ button {
   max-width: min(560px, 86vw);
   padding: 8px 15px;
   border-radius: var(--radius-pill);
-  background: var(--text);
-  color: var(--bg);
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
   font-size: var(--text-base);
   box-shadow: var(--shadow-panel);
   transition: transform var(--duration-base) var(--ease-out),
