@@ -162,7 +162,7 @@ function renderTask(task, view, ctx) {
         placeholder: "写下要做的事，Enter 保存",
         dataset: { action: "editor", id: task.id },
       }),
-      h("div", { class: "task__hint" }, "Enter 保存 · Shift + Enter 换行 · Esc 取消")
+      h("div", { class: "task__hint" }, "Enter 或点击别处保存 · Shift + Enter 换行 · Esc 取消")
     );
   }
 

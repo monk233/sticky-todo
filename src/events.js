@@ -137,9 +137,36 @@ export function createInteraction({ host, store, invoke }) {
     }
   }
 
+  /**
+   * 用户点到编辑器以外的位置，就等于结束这次编辑。
+   *
+   * 放在 click 里同步做，而不是只靠 focusout：提交会重建 DOM，等焦点事件
+   * 绕一圈回来时，这次点击的目标节点早就不在文档里了，动作会被丢掉。
+   * target 是本次点击命中的 [data-action] 元素。
+   */
+  function flushEditing(target) {
+    const ui = store.getUi();
+
+    if (ui.editingTaskId) {
+      const editor = host.querySelector(".task__editor");
+      if (editor && !editor.contains(target)) {
+        store.commitEdit(editor.dataset.id, editor.value);
+      }
+    }
+
+    if (ui.editingGroupId) {
+      const input = host.querySelector(".group__editor");
+      if (input && !input.contains(target)) {
+        store.renameGroup(input.dataset.id, input.value);
+      }
+    }
+  }
+
   function handleClick(event) {
     const target = event.target.closest("[data-action]");
     if (!target || !host.contains(target)) return;
+
+    flushEditing(target);
 
     const { action } = target.dataset;
     const id = target.dataset.id;
@@ -389,6 +416,40 @@ export function createInteraction({ host, store, invoke }) {
     void importFiles(taskId, files);
   }
 
+  /**
+   * 输入框失焦就保存：点别处、切到别的程序都算。
+   *
+   * 延后一个宏任务再提交，是为了让触发失焦的那次点击先落到它自己的目标上。
+   * 提交会重建整棵 DOM，如果同步处理，mousedown 之后元素就被换掉了，
+   * mouseup 落在新元素上，这次 click 就永远不会触发。
+   */
+  function handleFocusOut(event) {
+    const target = event.target;
+
+    // 元素已经被重建换掉时，浏览器同样会派发一次焦点丢失事件。那不是用户
+    // 离开，只是渲染方式留下的痕迹；提交它会把刚点开的分组名输入框关掉。
+    if (!target.isConnected) return;
+
+    if (target instanceof HTMLTextAreaElement && target.dataset.action === "editor") {
+      const id = target.dataset.id;
+      const value = target.value;
+      setTimeout(() => {
+        if (store.getUi().editingTaskId !== id) return;
+        store.commitEdit(id, value);
+      }, 0);
+      return;
+    }
+
+    if (target instanceof HTMLInputElement && target.dataset.action === "group-editor") {
+      const id = target.dataset.id;
+      const value = target.value;
+      setTimeout(() => {
+        if (store.getUi().editingGroupId !== id) return;
+        store.renameGroup(id, value);
+      }, 0);
+    }
+  }
+
   function registerTauriDragDrop() {
     const api = window.__TAURI__;
     if (!api?.event?.listen) return;
@@ -471,6 +532,7 @@ export function createInteraction({ host, store, invoke }) {
   host.addEventListener("click", handleClick);
   host.addEventListener("dblclick", handleDoubleClick);
   host.addEventListener("paste", handlePaste);
+  host.addEventListener("focusout", handleFocusOut);
   window.addEventListener("keydown", handleKeyDown);
   registerTauriDragDrop();
 
