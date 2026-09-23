@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
+  BUILTIN_THEMES,
   DEFAULT_THEME_ID,
   createThemeController,
   extractThemeCss,
@@ -176,4 +178,52 @@ test("createThemeController 对非法模式回退 system", () => {
 
   assert.equal(controller.currentMode(), "system");
   assert.equal(root.dataset.appearance, "light");
+});
+
+test("每个内置主题文件都能被提取成合法的变量块", () => {
+  for (const entry of BUILTIN_THEMES) {
+    if (!entry.file) continue;
+
+    const raw = readFileSync(new URL(`./${entry.file}`, import.meta.url), "utf8");
+    const css = extractThemeCss(raw, entry.id);
+
+    assert.ok(css.length > 0, `${entry.id}: 没有提取到任何变量`);
+    assert.ok(css.includes(`:root[data-theme="${entry.id}"]`), `${entry.id}: 选择器缺失`);
+    assert.equal(css.includes("undefined"), false, `${entry.id}: 出现了 undefined`);
+    assert.equal(css.includes("@import"), false, `${entry.id}: 混入了 @import`);
+  }
+});
+
+test("多行渐变写法的氛围变量没有被分号切坏", () => {
+  for (const id of ["liquid-glass", "sunlit"]) {
+    const css = extractThemeCss(
+      readFileSync(new URL(`./themes/${id}.css`, import.meta.url), "utf8"),
+      id
+    );
+
+    assert.ok(css.includes("--ambient-image"), `${id}: 缺 --ambient-image`);
+    assert.ok(css.includes("radial-gradient"), `${id}: 渐变被切掉了`);
+    assert.ok(css.includes("--ambient-animation"), `${id}: 缺 --ambient-animation`);
+  }
+});
+
+test("工业粗野的扫描线纹理保留了 repeating-linear-gradient", () => {
+  const css = extractThemeCss(
+    readFileSync(new URL("./themes/industrial.css", import.meta.url), "utf8"),
+    "industrial"
+  );
+
+  assert.ok(css.includes("--texture-image"));
+  assert.ok(css.includes("repeating-linear-gradient"));
+});
+
+test("流光溢影的纸张噪点是完整的 data URI", () => {
+  const css = extractThemeCss(
+    readFileSync(new URL("./themes/sunlit.css", import.meta.url), "utf8"),
+    "sunlit"
+  );
+
+  assert.ok(css.includes("--texture-image"));
+  assert.ok(css.includes("data:image/svg+xml"));
+  assert.ok(css.includes("feTurbulence"));
 });

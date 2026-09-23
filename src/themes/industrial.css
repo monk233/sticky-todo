@@ -1,0 +1,92 @@
+/* @name 工业粗野 */
+
+/* 明亮面走六十年代工业印刷：未漂白的纸、碳黑油墨、可见的分隔线、直角、
+   危险红只出现在状态与结构位置。暗黑面走战术终端：荧光线、扫描线纹理、
+   等宽字形主导。两面共用同一套机械语言，不混用。 */
+
+:root[data-theme="industrial"] {
+  --bg: #eae8e3;
+  --surface: #f4f4f0;
+  --surface-soft: #dedbd4;
+  --sidebar: #e4e1db;
+  --border: #111111;
+  --border-strong: #050505;
+  --text: #050505;
+  --text-soft: #4a4844;
+  --text-faint: #74716b;
+  --accent: #111111;
+  --accent-soft: rgba(17, 17, 17, 0.08);
+  --accent-contrast: #f4f4f0;
+  --danger: #e61919;
+  --danger-soft: rgba(230, 25, 25, 0.12);
+  --warn: #a35a00;
+  --scrim: rgba(5, 5, 5, 0.42);
+
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-pill: 0;
+
+  --text-xs: 10px;
+  --text-sm: 11px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+
+  --shadow-soft: none;
+  --shadow-panel: 0 0 0 2px #050505;
+
+  --task-bg: #f4f4f0;
+  --task-border: #111111;
+  --task-shadow: none;
+  --task-radius: 0;
+  --task-padding: 12px 14px;
+  --done-decoration: line-through;
+  --done-thickness: 3px;
+  --done-color: #e61919;
+  --done-skip-ink: none;
+  --cursor-ring: 0 0 0 2px #e61919;
+}
+
+:root[data-theme="industrial"][data-appearance="dark"] {
+  --bg: #0f0f0f;
+  --surface: #161616;
+  --surface-soft: #1e1e1e;
+  --sidebar: #131313;
+  --border: #2e2e2e;
+  --border-strong: #4a4a4a;
+  --text: #eaeaea;
+  --text-soft: #a4a4a4;
+  --text-faint: #6f6f6f;
+  --accent: #eaeaea;
+  --accent-soft: rgba(234, 234, 234, 0.1);
+  --accent-contrast: #0f0f0f;
+  --danger: #ff2a2a;
+  --danger-soft: rgba(255, 42, 42, 0.14);
+  --warn: #d0a13a;
+  --scrim: rgba(0, 0, 0, 0.62);
+
+  --font-body: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --font-display: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --shadow-soft: none;
+  --shadow-panel: 0 0 0 2px #4a4a4a;
+
+  --task-bg: #141414;
+  --task-border: #2e2e2e;
+  --task-radius: 0;
+  --done-color: #ff2a2a;
+
+  /* 电子束扫描线 */
+  --texture-image: repeating-linear-gradient(
+    0deg,
+    transparent 0,
+    transparent 2px,
+    rgba(0, 0, 0, 0.22) 2px,
+    rgba(0, 0, 0, 0.22) 4px
+  );
+  --texture-opacity: 0.55;
+  --texture-blend: normal;
+}

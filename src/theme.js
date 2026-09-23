@@ -13,7 +13,11 @@ export const DEFAULT_THEME_ID = "default";
 /** 内置主题。file 为 null 表示沿用 style.css 里的默认值，不额外注入。 */
 export const BUILTIN_THEMES = [
   { id: "default", name: "默认", file: null },
+  { id: "minimal", name: "极简", file: "themes/minimal.css" },
   { id: "paper", name: "纸本便签", file: "themes/paper.css" },
+  { id: "sunlit", name: "流光溢影", file: "themes/sunlit.css" },
+  { id: "liquid-glass", name: "液态玻璃", file: "themes/liquid-glass.css" },
+  { id: "industrial", name: "工业粗野", file: "themes/industrial.css" },
   { id: "terminal", name: "等宽终端", file: "themes/terminal.css" },
 ];
 

@@ -67,6 +67,25 @@
   --done-skip-ink: auto;
   --done-background: none;
   --cursor-ring: 0 0 0 3px var(--accent-soft);
+
+  /* 氛围层与质感层：默认全部关闭，主题按需打开。
+     动效本身由下面的 keyframes 提供，主题只能挑一整套，不能自己写规则。 */
+  --ambient-image: none;
+  --ambient-opacity: 0;
+  --ambient-size: cover;
+  --ambient-blur: 0px;
+  --ambient-blend: normal;
+  --ambient-animation: none;
+  --ambient-duration: 44s;
+  --ambient-easing: ease-in-out;
+
+  /* 全局纹理叠加：纸张纤维、噪点之类 */
+  --texture-image: none;
+  --texture-opacity: 0;
+  --texture-blend: multiply;
+
+  /* 毛玻璃：主题把表面色设成半透明并给出模糊半径即可生效 */
+  --surface-blur: none;
 }
 
 :root[data-appearance="dark"] {
@@ -116,7 +135,81 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 氛围层：缓慢流动的光斑，用来做液态玻璃或树影。
+   固定定位 + 不接收事件，动画只走 transform，不触发布局。 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -25%;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--ambient-image);
+  background-size: var(--ambient-size);
+  background-position: center;
+  opacity: var(--ambient-opacity);
+  filter: blur(var(--ambient-blur));
+  mix-blend-mode: var(--ambient-blend);
+  animation: var(--ambient-animation) var(--ambient-duration) var(--ambient-easing) infinite
+    alternate;
+}
+
+/* 质感层：纸张纤维、噪点这类静态叠加，压在氛围层之上、界面之下。 */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: var(--texture-image);
+  opacity: var(--texture-opacity);
+  mix-blend-mode: var(--texture-blend);
+}
+
+@keyframes ambient-flow {
+  0% {
+    transform: translate3d(-4%, 2%, 0) scale(1.1);
+  }
+  50% {
+    transform: translate3d(3%, -3%, 0) scale(1.2);
+  }
+  100% {
+    transform: translate3d(6%, 3%, 0) scale(1.06);
+  }
+}
+
+@keyframes ambient-drift {
+  0% {
+    transform: translate3d(-3%, -2%, 0) scale(1.06);
+  }
+  100% {
+    transform: translate3d(3%, 2%, 0) scale(1.14);
+  }
+}
+
+@keyframes ambient-sway {
+  0% {
+    transform: translate3d(-2%, 0, 0) rotate(-0.8deg) scale(1.05);
+  }
+  40% {
+    transform: translate3d(0.5%, -1.5%, 0) rotate(0.4deg) scale(1.09);
+  }
+  100% {
+    transform: translate3d(2.5%, 1%, 0) rotate(-0.5deg) scale(1.06);
+  }
+}
+
+/* 毛玻璃：只有把表面色设成半透明的主题才看得出效果。 */
+.sidebar,
+.workspace__head,
+.settings__panel,
+.task,
+.toast {
+  backdrop-filter: var(--surface-blur);
+}
+
 .root {
+  position: relative;
+  z-index: 2;
   height: 100%;
 }
 

@@ -1,0 +1,67 @@
+/* @name 极简 */
+
+/* 暖单色 + 单一炭黑强调，阴影几乎不可见，淡彩只用于状态点。
+   直角容器不圆润、边框极浅，靠留白和排版拉开层次。 */
+
+:root[data-theme="minimal"] {
+  --bg: #fbfbfa;
+  --surface: #ffffff;
+  --surface-soft: #f4f4f2;
+  --sidebar: #f7f6f3;
+  --border: #eaeaea;
+  --border-strong: #dcdbd8;
+  --text: #2f3437;
+  --text-soft: #6b6f72;
+  --text-faint: #9b9e9f;
+  --accent: #111111;
+  --accent-soft: rgba(17, 17, 17, 0.06);
+  --accent-contrast: #ffffff;
+  --danger: #9f2f2d;
+  --danger-soft: #fdebec;
+  --warn: #956400;
+  --scrim: rgba(47, 52, 55, 0.32);
+
+  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-panel: 0 2px 10px rgba(0, 0, 0, 0.05);
+
+  --task-bg: #ffffff;
+  --task-border: #eaeaea;
+  --task-shadow: none;
+  --task-radius: 8px;
+  --task-padding: 14px 16px;
+  --done-color: #9b9e9f;
+  --cursor-ring: 0 0 0 1px #111111;
+}
+
+:root[data-theme="minimal"][data-appearance="dark"] {
+  --bg: #1b1a18;
+  --surface: #222120;
+  --surface-soft: #2a2927;
+  --sidebar: #1e1d1b;
+  --border: #302f2d;
+  --border-strong: #403e3b;
+  --text: #ece9e4;
+  --text-soft: #a9a5a0;
+  --text-faint: #7d7a75;
+  --accent: #f0ede8;
+  --accent-soft: rgba(240, 237, 232, 0.1);
+  --accent-contrast: #1b1a18;
+  --danger: #d98b86;
+  --danger-soft: rgba(217, 139, 134, 0.14);
+  --warn: #c9a24a;
+  --scrim: rgba(0, 0, 0, 0.5);
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-panel: 0 3px 14px rgba(0, 0, 0, 0.45);
+
+  --task-bg: #222120;
+  --task-border: #302f2d;
+  --done-color: #7d7a75;
+  --cursor-ring: 0 0 0 1px #f0ede8;
+}
