@@ -9,6 +9,12 @@ edition = "2021"
 name = "sticky_todo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["custom-protocol"]
+# 让 Tauri 加载嵌入二进制的前端资源，而不是去连 devUrl 的开发服务器。
+# 缺少这个 feature 时程序会认为自己在开发模式，界面会是空白的。
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

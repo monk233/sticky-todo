@@ -7,6 +7,7 @@ import { createThemeController } from "./theme.js";
 import { createInteraction } from "./events.js";
 
 const host = document.getElementById("root");
+let bannerShown = false;
 
 function tauriApi() {
   return window.__TAURI__ ?? null;
@@ -27,7 +28,10 @@ function fileSource(path) {
   return api?.core?.convertFileSrc ? api.core.convertFileSrc(path) : path;
 }
 
-function errorBanner(message) {
+function showBanner(message) {
+  if (bannerShown) return;
+  bannerShown = true;
+
   const box = document.createElement("div");
   box.className = "boot-error";
 
@@ -38,8 +42,16 @@ function errorBanner(message) {
   body.textContent = message;
 
   box.append(title, body);
-  return box;
+  host.replaceChildren(box);
 }
+
+window.addEventListener("error", (event) => {
+  showBanner(String(event.error ?? event.message));
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  showBanner(String(event.reason));
+});
 
 async function main() {
   const invoke = requireInvoke();
@@ -91,14 +103,10 @@ async function main() {
     });
   }
 
-  try {
-    await store.init();
-  } catch (error) {
-    host.replaceChildren(errorBanner(String(error)));
-    return;
-  }
-
+  await store.init();
   render();
 }
 
-main();
+main().catch((error) => {
+  showBanner(String(error));
+});
