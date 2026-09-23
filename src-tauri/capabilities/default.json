@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "sticky-todo 主窗口的权限集。所有文件操作都经由应用自身的命令完成，因此这里只授予 Tauri 核心权限。",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
