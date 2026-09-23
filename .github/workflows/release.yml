@@ -1,0 +1,59 @@
+name: 构建并发布
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Rust 编译产物
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 运行 Rust 单元测试
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: 运行前端单元测试
+        run: node --test "src/*.test.js"
+
+      - name: 构建 release
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+
+      - name: 检查产物
+        run: |
+          $exe = "src-tauri\target\release\sticky-todo.exe"
+          if (-not (Test-Path $exe)) { throw "没有找到 $exe" }
+          $size = (Get-Item $exe).Length
+          Write-Host ("产物 {0:N0} 字节（{1:N2} MB）" -f $size, ($size / 1MB))
+
+      - name: 发布到 Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: 最新构建
+          body: |
+            由 GitHub Actions 在每次推送到 main 时自动构建。
+
+            - 提交：${{ github.sha }}
+            - 分支：${{ github.ref_name }}
+            - 构建于：${{ github.run_started_at }}
+
+            下载 `sticky-todo.exe` 直接运行，不需要安装。运行依赖系统的
+            WebView2 运行时，Windows 11 已内置。
+          files: src-tauri/target/release/sticky-todo.exe
+          draft: false
+          prerelease: false
