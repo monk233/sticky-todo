@@ -4,6 +4,13 @@
 // 它不生成 DOM，也不做过滤/排序（那些在 model.js）。
 
 import { DEFAULT_SETTINGS, createEmptyData, sortTasks } from "./model.js";
+import {
+  DEFAULT_THEME_ID,
+  loadBuiltinThemes,
+  mergeThemes,
+  normalizeUserThemes,
+  resolveThemeId,
+} from "./theme.js";
 
 function uuid() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -73,6 +80,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     previewImage: null,
     collapsedGroups: new Set(),
     toasts: [],
+    themes: [],
   };
 
   const notify = () => onChange();
@@ -177,10 +185,75 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     await applyHotkey();
   }
 
+  function fetchThemeText(path) {
+    return fetch(new URL(path, document.baseURI)).then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.text();
+    });
+  }
+
+  /** 内置主题与自定义主题合并成一张列表。任一来源失败都不影响另一个。 */
+  async function loadThemes() {
+    let builtin = [];
+    try {
+      builtin = await loadBuiltinThemes(fetchThemeText);
+    } catch (error) {
+      onError(`内置主题加载失败：${String(error)}`);
+    }
+
+    let user = [];
+    try {
+      user = normalizeUserThemes(await invoke("list_user_themes"));
+    } catch (error) {
+      onError(`读取自定义主题失败：${String(error)}`);
+    }
+
+    ui.themes = mergeThemes(builtin, user);
+    notify();
+  }
+
+  /** 主题名指向不存在的主题时回退到默认，并告诉用户。 */
+  function reconcileThemeName() {
+    const wanted = data.settings.themeName ?? DEFAULT_THEME_ID;
+    const resolved = resolveThemeId(ui.themes, wanted);
+    if (resolved === wanted) return;
+    data.settings.themeName = resolved;
+    scheduleSave();
+    toast(`找不到主题「${wanted}」，已改用「${resolved}」。`, "warn");
+  }
+
+  async function reloadThemes() {
+    await loadThemes();
+    reconcileThemeName();
+    toast(`已重新加载主题，共 ${ui.themes.length} 套。`);
+  }
+
+  function setTheme(id) {
+    updateSetting("themeName", resolveThemeId(ui.themes, id));
+  }
+
+  function openThemesDir() {
+    invoke("open_themes_dir").catch((error) => {
+      onError(String(error));
+      toast(`打开主题目录失败：${String(error)}`, "error");
+    });
+  }
+
+  /** 当前要应用的主题对象，供渲染层读取。 */
+  function activeTheme() {
+    return (
+      ui.themes.find((theme) => theme.id === data.settings.themeName) ??
+      ui.themes.find((theme) => theme.id === DEFAULT_THEME_ID) ??
+      null
+    );
+  }
+
   async function init() {
     const bootstrap = await invoke("get_bootstrap");
     dataDir = bootstrap.dataDir ?? "";
+    await loadThemes();
     await reload();
+    reconcileThemeName();
     await syncHostState();
   }
 
@@ -584,6 +657,10 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     cycleGroup,
     toggleCollapse,
     updateSetting,
+    setTheme,
+    reloadThemes,
+    openThemesDir,
+    activeTheme,
     toggleAutoStart,
     beginHotkeyRecording,
     cancelHotkeyRecording,

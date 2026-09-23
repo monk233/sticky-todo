@@ -1,0 +1,66 @@
+/* @name 等宽终端 */
+
+/* 全等宽字体、直角、琥珀强调。信息靠字符宽度对齐，观感接近终端面板。 */
+
+:root[data-theme="terminal"] {
+  --bg: #eceef1;
+  --surface: #f7f8fa;
+  --surface-soft: #e2e5e9;
+  --sidebar: #e7eaee;
+  --border: #d3d7dd;
+  --border-strong: #b4bac3;
+  --text: #14171b;
+  --text-soft: #545b65;
+  --text-faint: #838b96;
+  --accent: #9a6415;
+  --accent-soft: rgba(154, 100, 21, 0.13);
+  --accent-contrast: #fffdf7;
+  --danger: #b23a33;
+  --danger-soft: rgba(178, 58, 51, 0.12);
+  --warn: #96690f;
+  --scrim: rgba(20, 23, 27, 0.42);
+
+  --font-body: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --font-display: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-pill: 3px;
+
+  --shadow-soft: 0 1px 1px rgba(20, 23, 27, 0.08);
+  --shadow-panel: 0 12px 30px rgba(20, 23, 27, 0.18);
+
+  --task-bg: var(--surface);
+  --task-border: var(--border);
+  --task-shadow: none;
+  --task-radius: 3px;
+  --task-padding: 9px 11px;
+  --done-decoration: line-through;
+  --done-thickness: 1px;
+  --done-color: var(--text-faint);
+  --cursor-ring: 0 0 0 1px var(--accent);
+}
+
+:root[data-theme="terminal"][data-appearance="dark"] {
+  --bg: #0c0e11;
+  --surface: #13161a;
+  --surface-soft: #1a1e23;
+  --sidebar: #0f1215;
+  --border: #22272e;
+  --border-strong: #333a43;
+  --text: #d6dbe2;
+  --text-soft: #8d96a2;
+  --text-faint: #626b76;
+  --accent: #e0a458;
+  --accent-soft: rgba(224, 164, 88, 0.15);
+  --accent-contrast: #1a1206;
+  --danger: #e06c5a;
+  --danger-soft: rgba(224, 108, 90, 0.16);
+  --warn: #d8a04a;
+  --scrim: rgba(0, 0, 0, 0.62);
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-panel: 0 14px 34px rgba(0, 0, 0, 0.6);
+}

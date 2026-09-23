@@ -6,6 +6,7 @@
 export const DEFAULT_SETTINGS = {
   layout: "panel",
   theme: "system",
+  themeName: "default",
   alwaysOnTop: true,
   closeToTray: true,
   hideCompleted: false,

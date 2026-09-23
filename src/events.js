@@ -255,6 +255,18 @@ export function createInteraction({ host, store, invoke }) {
         store.patchUi({ previewImage: null });
         return;
 
+      case "set-theme":
+        store.setTheme(id);
+        return;
+
+      case "reload-themes":
+        void store.reloadThemes();
+        return;
+
+      case "open-themes-dir":
+        store.openThemesDir();
+        return;
+
       case "update-setting":
         store.updateSetting(target.dataset.key, target.dataset.value);
         return;

@@ -1,46 +1,179 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createThemeController, normalizeTheme, resolveTheme, THEMES } from "./theme.js";
+import {
+  DEFAULT_THEME_ID,
+  createThemeController,
+  extractThemeCss,
+  findTheme,
+  mergeThemes,
+  normalizeMode,
+  normalizeUserThemes,
+  resolveAppearance,
+  resolveThemeId,
+  themeNameFromCss,
+  themeVariable,
+} from "./theme.js";
 
-test("normalizeTheme 接受三种取值，其余一律回退 system", () => {
-  assert.deepEqual(THEMES, ["light", "dark", "system"]);
-  assert.equal(normalizeTheme("dark"), "dark");
-  assert.equal(normalizeTheme("light"), "light");
-  assert.equal(normalizeTheme("system"), "system");
-  assert.equal(normalizeTheme("neon"), "system");
-  assert.equal(normalizeTheme(undefined), "system");
+test("normalizeMode 只接受三种取值，其余回退 system", () => {
+  assert.equal(normalizeMode("light"), "light");
+  assert.equal(normalizeMode("dark"), "dark");
+  assert.equal(normalizeMode("system"), "system");
+  assert.equal(normalizeMode("neon"), "system");
+  assert.equal(normalizeMode(undefined), "system");
 });
 
-test("resolveTheme 在 system 下跟随系统偏好", () => {
-  assert.equal(resolveTheme("system", true), "dark");
-  assert.equal(resolveTheme("system", false), "light");
-  assert.equal(resolveTheme("dark", false), "dark");
-  assert.equal(resolveTheme("light", true), "light");
+test("resolveAppearance 在 system 下跟随系统偏好", () => {
+  assert.equal(resolveAppearance("system", true), "dark");
+  assert.equal(resolveAppearance("system", false), "light");
+  assert.equal(resolveAppearance("dark", false), "dark");
+  assert.equal(resolveAppearance("light", true), "light");
 });
 
-test("createThemeController 把解析结果写到根元素", () => {
+test("themeNameFromCss 从注释里取名字", () => {
+  assert.equal(themeNameFromCss("/* @name 纸本便签 */\n:root{}", "fallback"), "纸本便签");
+  assert.equal(themeNameFromCss("/*@name  紧凑  */\n:root{}", "fallback"), "紧凑");
+});
+
+test("themeNameFromCss 在缺失或空名时回退", () => {
+  assert.equal(themeNameFromCss(":root{}", "paper"), "paper");
+  assert.equal(themeNameFromCss("/* @name  */\n:root{}", "paper"), "paper");
+  assert.equal(themeNameFromCss("", "paper"), "paper");
+});
+
+test("extractThemeCss 只保留属于该主题的变量块", () => {
+  const raw = `
+    /* @name 测试 */
+    :root[data-theme="demo"] {
+      --bg: #fff; /* 行内注释 */
+      --accent: #b23a2f;
+    }
+    :root[data-theme="other"] { --bg: #000; }
+    :root { --text: red; }
+  `;
+
+  const css = extractThemeCss(raw, "demo");
+
+  assert.equal(css, ':root[data-theme="demo"] { --bg: #fff; --accent: #b23a2f; }');
+});
+
+test("extractThemeCss 丢掉任何会改布局的规则", () => {
+  const raw = `
+    /* @name 恶意 */
+    body { display: none !important; }
+    .task { position: fixed; inset: 0; }
+    @import url("https://example.com/x.css");
+    :root[data-theme="evil"] { --bg: #000; }
+  `;
+
+  const css = extractThemeCss(raw, "evil");
+
+  assert.equal(css, ':root[data-theme="evil"] { --bg: #000; }');
+  assert.ok(!css.includes("display"));
+  assert.ok(!css.includes("position"));
+  assert.ok(!css.includes("@import"));
+});
+
+test("extractThemeCss 保留暗黑块与普通块各自的选择器", () => {
+  const raw = `
+    :root[data-theme="demo"] { --bg: #fff; }
+    :root[data-theme="demo"][data-appearance="dark"] { --bg: #111; }
+  `;
+
+  const css = extractThemeCss(raw, "demo");
+
+  assert.ok(css.includes(':root[data-theme="demo"] { --bg: #fff; }'));
+  assert.ok(
+    css.includes(':root[data-theme="demo"][data-appearance="dark"] { --bg: #111; }')
+  );
+});
+
+test("extractThemeCss 忽略没有任何变量声明的块", () => {
+  const raw = ':root[data-theme="demo"] { color: red; }';
+  assert.equal(extractThemeCss(raw, "demo"), "");
+});
+
+test("extractThemeCss 对空输入返回空串", () => {
+  assert.equal(extractThemeCss("", "demo"), "");
+  assert.equal(extractThemeCss(undefined, "demo"), "");
+});
+
+test("themeVariable 取出变量字面值，取不到返回空串", () => {
+  const css = ':root[data-theme="demo"] { --bg: #f5f1e8; --accent: #b23a2f; }';
+  assert.equal(themeVariable(css, "--bg"), "#f5f1e8");
+  assert.equal(themeVariable(css, "--accent"), "#b23a2f");
+  assert.equal(themeVariable(css, "--missing"), "");
+  assert.equal(themeVariable("", "--bg"), "");
+});
+
+test("normalizeUserThemes 过滤掉没有 id 的条目并做变量过滤", () => {
+  const rows = [
+    { id: "mine", name: "我的", css: ':root[data-theme="mine"] { --bg: #123; }\nbody{display:none}' },
+    { id: "", name: "空 id", css: "" },
+    null,
+  ];
+
+  const themes = normalizeUserThemes(rows);
+
+  assert.equal(themes.length, 1);
+  assert.equal(themes[0].id, "mine");
+  assert.equal(themes[0].source, "user");
+  assert.equal(themes[0].css, ':root[data-theme="mine"] { --bg: #123; }');
+});
+
+test("mergeThemes 让自定义主题覆盖同名内置主题", () => {
+  const builtin = [
+    { id: "default", name: "默认", source: "builtin", css: "" },
+    { id: "paper", name: "纸本便签", source: "builtin", css: "a" },
+  ];
+  const user = [{ id: "paper", name: "我的纸", source: "user", css: "b" }];
+
+  const merged = mergeThemes(builtin, user);
+
+  assert.equal(merged.length, 2);
+  assert.equal(findTheme(merged, "paper").name, "我的纸");
+  assert.equal(findTheme(merged, "paper").source, "user");
+  assert.equal(merged[0].source, "builtin");
+});
+
+test("resolveThemeId 在缺失时回退到默认主题", () => {
+  const themes = [
+    { id: "default" },
+    { id: "paper" },
+  ];
+  assert.equal(resolveThemeId(themes, "paper"), "paper");
+  assert.equal(resolveThemeId(themes, "不存在"), DEFAULT_THEME_ID);
+  assert.equal(resolveThemeId([{ id: "only" }], "不存在"), "only");
+  assert.equal(resolveThemeId([], "不存在"), DEFAULT_THEME_ID);
+});
+
+test("createThemeController 把属性与样式写到位", () => {
   const root = { dataset: {}, style: {} };
-  const controller = createThemeController({ root, query: () => true });
+  const styleElement = { textContent: "" };
+  const controller = createThemeController({ root, styleElement, query: () => true });
 
-  assert.equal(root.dataset.theme, "dark");
+  assert.equal(root.dataset.appearance, "dark");
+  assert.equal(root.dataset.theme, DEFAULT_THEME_ID);
   assert.equal(root.style.colorScheme, "dark");
 
-  controller.set("light");
-  assert.equal(root.dataset.theme, "light");
-  assert.equal(controller.current(), "light");
+  controller.set({ mode: "light", themeId: "paper", css: ':root[data-theme="paper"]{}' });
 
-  controller.set("system");
-  assert.equal(root.dataset.theme, "dark");
-  assert.equal(controller.current(), "system");
+  assert.equal(root.dataset.appearance, "light");
+  assert.equal(root.dataset.theme, "paper");
+  assert.equal(styleElement.textContent, ':root[data-theme="paper"]{}');
+
+  controller.set({ mode: "system" });
+  assert.equal(root.dataset.appearance, "dark");
+  assert.equal(root.dataset.theme, "paper");
 });
 
-test("createThemeController 对非法主题回退 system 而不是写坏值", () => {
+test("createThemeController 对非法模式回退 system", () => {
   const root = { dataset: {}, style: {} };
-  const controller = createThemeController({ root, query: () => false });
+  const styleElement = { textContent: "" };
+  const controller = createThemeController({ root, styleElement, query: () => false });
 
-  controller.set("rainbow");
+  controller.set({ mode: "rainbow" });
 
-  assert.equal(controller.current(), "system");
-  assert.equal(root.dataset.theme, "light");
+  assert.equal(controller.currentMode(), "system");
+  assert.equal(root.dataset.appearance, "light");
 });

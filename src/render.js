@@ -5,6 +5,7 @@
 
 import { icons } from "./icons.js";
 import { formatStamp, formatFullStamp, formatAccelerator } from "./model.js";
+import { themeVariable } from "./theme.js";
 
 function h(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -404,6 +405,49 @@ function renderSegmented({ key, value, options }) {
   );
 }
 
+function renderThemeList(ui, settings) {
+  if (!ui.themes || ui.themes.length === 0) {
+    return h("p", { class: "field__hint" }, "正在加载主题…");
+  }
+
+  return h(
+    "div",
+    { class: "theme-list", role: "radiogroup", "aria-label": "主题样式" },
+    ui.themes.map((theme) => {
+      const active = theme.id === settings.themeName;
+      const swatches = [
+        themeVariable(theme.css, "--bg"),
+        themeVariable(theme.css, "--accent"),
+      ].filter(Boolean);
+
+      return h(
+        "button",
+        {
+          class: `theme-option ${active ? "is-active" : ""}`,
+          type: "button",
+          role: "radio",
+          "aria-checked": active ? "true" : "false",
+          title: theme.name,
+          dataset: { action: "set-theme", id: theme.id },
+        },
+        swatches.length > 0
+          ? h(
+              "span",
+              { class: "theme-option__swatches" },
+              swatches.map((color) => h("i", { style: `background:${color}` }))
+            )
+          : null,
+        h("span", { class: "theme-option__name" }, theme.name),
+        h(
+          "span",
+          { class: "theme-option__source" },
+          theme.source === "builtin" ? "内置" : "自定义"
+        )
+      );
+    })
+  );
+}
+
 function renderSettings(view, ctx) {
   const { settings } = view;
   const { ui, dataDir } = ctx;
@@ -497,7 +541,7 @@ function renderSettings(view, ctx) {
           { class: "settings__group" },
           h("h3", {}, "外观"),
           renderField(
-            "主题",
+            "明暗模式",
             renderSegmented({
               key: "theme",
               value: settings.theme,
@@ -507,6 +551,36 @@ function renderSettings(view, ctx) {
                 { value: "system", label: "跟随系统", icon: "monitor" },
               ],
             })
+          ),
+          h(
+            "div",
+            { class: "field field--stack" },
+            h(
+              "div",
+              { class: "field__label" },
+              h("span", {}, "主题样式"),
+              h(
+                "span",
+                { class: "field__hint" },
+                `共 ${ui.themes.length} 套。自定义主题放进数据目录的 themes/ 目录即可，文件名就是主题标识`
+              )
+            ),
+            renderThemeList(ui, settings),
+            h(
+              "div",
+              { class: "field__actions" },
+              h(
+                "button",
+                { class: "ghost-button", type: "button", dataset: { action: "reload-themes" } },
+                "重新加载主题"
+              ),
+              h(
+                "button",
+                { class: "ghost-button", type: "button", dataset: { action: "open-themes-dir" } },
+                h("span", { class: "ghost-button__icon", html: icons.folder }),
+                "打开主题目录"
+              )
+            )
           )
         ),
         h(

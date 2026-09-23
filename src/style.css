@@ -1,47 +1,94 @@
 /* ==========================================================================
-   主题变量
-   明亮与暗黑两套值；跟随系统时由 theme.js 解析后写到 data-theme 上。
+   变量契约
+   --------------------------------------------------------------------------
+   这里只放「默认值」。主题文件通过 :root[data-theme="<id>"] 覆盖它们，
+   想改哪一项就写哪一项，没写的沿用默认。
+
+   明暗是独立维度：theme.js 把解析结果写到根元素的 data-appearance 上，
+   主题可以针对 [data-appearance="dark"] 再给一套值。
    ========================================================================== */
 
-:root,
-[data-theme="light"] {
+:root {
   color-scheme: light;
-  --bg: #f6f7f9;
+
+  /* 核心颜色 */
+  --bg: #f5f6f8;
   --surface: #ffffff;
-  --surface-soft: #eff1f5;
-  --sidebar: #eef0f5;
-  --border: #e3e6ec;
-  --border-strong: #cfd5e0;
-  --text: #1a1d23;
-  --text-soft: #5b6270;
-  --text-faint: #8c93a1;
-  --accent: #5274f5;
-  --accent-soft: rgba(82, 116, 245, 0.13);
-  --danger: #d64a4a;
-  --danger-soft: rgba(214, 74, 74, 0.12);
-  --warn: #b8791a;
-  --shadow: 0 12px 34px rgba(18, 22, 33, 0.14);
-  --scrim: rgba(14, 17, 24, 0.4);
+  --surface-soft: #eef0f4;
+  --sidebar: #eceef3;
+  --border: #e2e5eb;
+  --border-strong: #ccd2dd;
+  --text: #1b1e24;
+  --text-soft: #5a616d;
+  --text-faint: #8b929e;
+  --accent: #b4523a;
+  --accent-soft: rgba(180, 82, 58, 0.12);
+  --accent-contrast: #ffffff;
+  --danger: #c8433c;
+  --danger-soft: rgba(200, 67, 60, 0.12);
+  --warn: #a8721a;
+  --scrim: rgba(16, 18, 24, 0.42);
+
+  /* 排版 */
+  --font-body: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --font-display: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 21px;
+
+  /* 形状 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 11px;
+  --radius-pill: 999px;
+
+  /* 阴影（着色到背景色相，不用纯黑） */
+  --shadow-soft: 0 1px 2px rgba(27, 30, 36, 0.06);
+  --shadow-panel: 0 14px 38px rgba(27, 30, 36, 0.16);
+
+  /* 动效 */
+  --duration-fast: 140ms;
+  --duration-base: 220ms;
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* 组件钩子：给主题留出的抓手，默认等同于上面几项 */
+  --task-bg: var(--surface);
+  --task-border: var(--border);
+  --task-shadow: none;
+  --task-radius: var(--radius-lg);
+  --task-padding: 10px 12px;
+  --done-decoration: line-through;
+  --done-thickness: 1px;
+  --done-color: currentColor;
+  --done-skip-ink: auto;
+  --done-background: none;
+  --cursor-ring: 0 0 0 3px var(--accent-soft);
 }
 
-[data-theme="dark"] {
+:root[data-appearance="dark"] {
   color-scheme: dark;
-  --bg: #16181d;
-  --surface: #1d2026;
-  --surface-soft: #23272f;
-  --sidebar: #1a1d23;
-  --border: #2b3038;
-  --border-strong: #3b414b;
-  --text: #e8eaee;
-  --text-soft: #a3aab7;
-  --text-faint: #767e8c;
-  --accent: #7b93ff;
-  --accent-soft: rgba(123, 147, 255, 0.16);
-  --danger: #ef6b6b;
-  --danger-soft: rgba(239, 107, 107, 0.16);
-  --warn: #d3a13f;
-  --shadow: 0 14px 38px rgba(0, 0, 0, 0.5);
-  --scrim: rgba(0, 0, 0, 0.55);
+  --bg: #15171c;
+  --surface: #1c1f25;
+  --surface-soft: #23262d;
+  --sidebar: #191b21;
+  --border: #2a2e36;
+  --border-strong: #3a3f49;
+  --text: #e9ebef;
+  --text-soft: #a2a9b5;
+  --text-faint: #757d8a;
+  --accent: #d9744f;
+  --accent-soft: rgba(217, 116, 79, 0.16);
+  --accent-contrast: #1a1206;
+  --danger: #e2665f;
+  --danger-soft: rgba(226, 102, 95, 0.16);
+  --warn: #c9922f;
+  --scrim: rgba(0, 0, 0, 0.56);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-panel: 0 16px 42px rgba(0, 0, 0, 0.52);
 }
 
 /* ==========================================================================
@@ -59,13 +106,14 @@ body {
 }
 
 body {
-  font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.55;
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .root {
@@ -83,6 +131,31 @@ button {
   color: inherit;
 }
 
+/* 键盘操作必须看得见焦点。鼠标点击不会触发 :focus-visible，不打扰外观。 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* 按下时给一点位移与压缩，模拟实体按键 */
+.icon-button:active,
+.ghost-button:active,
+.primary-button:active,
+.key-button:active,
+.segmented__item:active,
+.section__toggle:active,
+.group:active,
+.switch:active,
+.task__check:active,
+.theme-option:active {
+  transform: translateY(1px) scale(0.98);
+  transition-duration: 60ms;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -91,7 +164,7 @@ button {
 ::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border: 3px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background-clip: content-box;
 }
 
@@ -111,7 +184,9 @@ button {
 }
 
 .boot-error h1 {
-  font-size: 18px;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
   margin: 0 0 8px;
 }
 
@@ -156,15 +231,17 @@ button {
 }
 
 .sidebar__mark {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   color: var(--accent);
   flex: 0 0 auto;
 }
 
 .sidebar__title {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
 }
 
 .groups {
@@ -185,12 +262,13 @@ button {
   width: 100%;
   padding: 7px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-soft);
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .group:hover {
@@ -212,7 +290,7 @@ button {
 
 .group__count {
   flex: 0 0 auto;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -229,7 +307,7 @@ button {
   width: 100%;
   padding: 5px 8px;
   border: 1px solid var(--accent);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   font: inherit;
@@ -262,11 +340,12 @@ button {
   height: 28px;
   padding: 5px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-faint);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .icon-button:hover {
@@ -295,11 +374,13 @@ button {
   gap: 6px;
   padding: 6px 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
 }
 
 .ghost-button:hover {
@@ -324,16 +405,16 @@ button {
   gap: 6px;
   padding: 6px 12px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--accent);
-  color: #ffffff;
+  color: var(--accent-contrast);
   font-weight: 500;
   cursor: pointer;
-  transition: filter 0.12s ease;
+  transition: filter var(--duration-fast) var(--ease-out);
 }
 
 .primary-button:hover {
-  filter: brightness(1.06);
+  filter: brightness(1.07);
 }
 
 .primary-button__icon {
@@ -346,12 +427,13 @@ button {
   min-width: 116px;
   padding: 6px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-soft);
   color: var(--text-soft);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .key-button:hover {
@@ -408,8 +490,10 @@ button {
 
 .workspace__title h1 {
   margin: 0;
-  font-size: 16px;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
   font-weight: 600;
+  letter-spacing: -0.012em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -417,7 +501,7 @@ button {
 
 .workspace__count {
   flex: 0 0 auto;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -431,7 +515,7 @@ button {
 
 .section__tools {
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .section:hover .section__tools,
@@ -459,11 +543,13 @@ button {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  padding: var(--task-padding);
+  border: 1px solid var(--task-border);
+  border-radius: var(--task-radius);
+  background: var(--task-bg);
+  box-shadow: var(--task-shadow);
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
 }
 
 .task:hover {
@@ -472,7 +558,7 @@ button {
 
 .task.is-cursor {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: var(--cursor-ring);
 }
 
 .task__check {
@@ -485,11 +571,13 @@ button {
   margin-top: 2px;
   padding: 3px;
   border: 1.5px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: transparent;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .task__check:hover {
@@ -499,7 +587,7 @@ button {
 .task__check.is-done {
   background: var(--accent);
   border-color: var(--accent);
-  color: #ffffff;
+  color: var(--accent-contrast);
 }
 
 .task__main {
@@ -513,19 +601,25 @@ button {
 .task__text {
   white-space: pre-wrap;
   word-break: break-word;
+  text-wrap: pretty;
 }
 
 .task.is-done .task__text {
   color: var(--text-faint);
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
+  text-decoration-line: var(--done-decoration);
+  text-decoration-thickness: var(--done-thickness);
+  text-decoration-color: var(--done-color);
+  text-decoration-skip-ink: var(--done-skip-ink);
+  background-image: var(--done-background);
+  background-repeat: repeat-x;
+  background-position: left center;
 }
 
 .task__meta {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -547,7 +641,7 @@ button {
   max-width: 150px;
   object-fit: cover;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: zoom-in;
 }
 
@@ -559,12 +653,13 @@ button {
   height: 18px;
   padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--text-soft);
   opacity: 0;
   cursor: pointer;
-  transition: opacity 0.12s ease, color 0.12s ease;
+  transition: opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .thumb:hover .thumb__remove {
@@ -580,7 +675,7 @@ button {
   align-items: center;
   gap: 2px;
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .task:hover .task__tools,
@@ -597,7 +692,7 @@ button {
   flex-direction: column;
   gap: 6px;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: var(--cursor-ring);
 }
 
 .task__editor {
@@ -605,17 +700,17 @@ button {
   min-height: 58px;
   padding: 8px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-soft);
   color: var(--text);
   font: inherit;
-  line-height: 1.5;
+  line-height: 1.55;
   resize: vertical;
   outline: none;
 }
 
 .task__hint {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-faint);
 }
 
@@ -657,12 +752,14 @@ button {
   gap: 8px;
   padding: 4px 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
+  font-family: var(--font-display);
   font-weight: 600;
+  letter-spacing: -0.008em;
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .section__toggle:hover {
@@ -673,7 +770,7 @@ button {
   width: 14px;
   height: 14px;
   color: var(--text-faint);
-  transition: transform 0.16s ease;
+  transition: transform var(--duration-base) var(--ease-out);
 }
 
 .section.is-collapsed .section__chevron {
@@ -681,7 +778,7 @@ button {
 }
 
 .section__count {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 400;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
@@ -690,7 +787,7 @@ button {
 .section__empty {
   margin: 0;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-faint);
 }
 
@@ -716,14 +813,17 @@ button {
 
 .empty__title {
   margin: 0;
-  font-size: 15px;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
   font-weight: 600;
+  letter-spacing: -0.012em;
 }
 
 .empty__hint {
   margin: 0;
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: var(--text-base);
+  max-width: 42ch;
 }
 
 /* ==========================================================================
@@ -750,8 +850,9 @@ button {
   height: 100%;
   background: var(--surface);
   border-left: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  transition: transform 0.16s ease, opacity 0.16s ease;
+  box-shadow: var(--shadow-panel);
+  transition: transform var(--duration-base) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out);
 }
 
 .settings__panel.is-entering {
@@ -769,8 +870,10 @@ button {
 
 .settings__head h2 {
   margin: 0;
-  font-size: 15px;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
   font-weight: 600;
+  letter-spacing: -0.012em;
 }
 
 .settings__body {
@@ -791,9 +894,9 @@ button {
 
 .settings__group h3 {
   margin: 0 0 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
 }
@@ -820,7 +923,7 @@ button {
 }
 
 .field__hint {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-faint);
   line-height: 1.5;
 }
@@ -836,19 +939,85 @@ button {
   display: block;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-soft);
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
   color: var(--text-soft);
   word-break: break-all;
 }
+
+/* --- 主题选择 --- */
+
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.theme-option:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.theme-option.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.theme-option__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-option__source {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.theme-option__swatches {
+  display: flex;
+  gap: 3px;
+}
+
+.theme-option__swatches i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* --- 分段控件 --- */
 
 .segmented {
   display: inline-flex;
   padding: 2px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   background: var(--surface-soft);
   gap: 2px;
 }
@@ -859,12 +1028,13 @@ button {
   gap: 5px;
   padding: 5px 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: var(--text-base);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .segmented__item:hover {
@@ -875,7 +1045,7 @@ button {
   background: var(--surface);
   color: var(--accent);
   font-weight: 500;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-soft);
 }
 
 .segmented__icon {
@@ -884,6 +1054,8 @@ button {
   flex: 0 0 auto;
 }
 
+/* --- 开关 --- */
+
 .switch {
   flex: 0 0 auto;
   position: relative;
@@ -891,10 +1063,10 @@ button {
   height: 23px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border-strong);
   cursor: pointer;
-  transition: background 0.16s ease;
+  transition: background var(--duration-base) var(--ease-out);
 }
 
 .switch.is-on {
@@ -912,10 +1084,10 @@ button {
   left: 2.5px;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
-  transition: transform 0.16s ease;
+  box-shadow: var(--shadow-soft);
+  transition: transform var(--duration-base) var(--ease-out);
 }
 
 .switch.is-on .switch__knob {
@@ -941,8 +1113,8 @@ button {
 .lightbox__image {
   max-width: 100%;
   max-height: 100%;
-  border-radius: 10px;
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
 }
 
 .lightbox .icon-button {
@@ -975,12 +1147,13 @@ button {
 .toast {
   max-width: min(560px, 86vw);
   padding: 8px 15px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--text);
   color: var(--bg);
-  font-size: 13px;
-  box-shadow: var(--shadow);
-  transition: transform 0.18s ease, opacity 0.18s ease;
+  font-size: var(--text-base);
+  box-shadow: var(--shadow-panel);
+  transition: transform var(--duration-base) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out);
 }
 
 /* 同上：提示条只在第一次出现时淡入，重建时不重播。 */
@@ -1019,5 +1192,15 @@ button {
 
   .sections {
     padding: 12px 12px 22px;
+  }
+}
+
+/* 尊重系统的减少动效设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
   }
 }

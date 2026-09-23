@@ -55,9 +55,16 @@ window.addEventListener("unhandledrejection", (event) => {
 
 async function main() {
   const invoke = requireInvoke();
-  const theme = createThemeController({ root: document.documentElement });
 
-  let lastTheme = null;
+  // 主题变量始终写进这一个 style 元素，切换主题只换内容，不碰 DOM 结构。
+  const themeStyle = document.createElement("style");
+  themeStyle.id = "theme-vars";
+  document.head.append(themeStyle);
+  const theme = createThemeController({
+    root: document.documentElement,
+    styleElement: themeStyle,
+  });
+
   let render = () => {};
 
   const store = createStore({
@@ -70,7 +77,20 @@ async function main() {
 
   const interaction = createInteraction({ host, store, invoke, assetUrl });
 
+  function applyTheme() {
+    const settings = store.getData().settings;
+    const active = store.activeTheme();
+    theme.set({
+      mode: settings.theme,
+      themeId: active?.id ?? settings.themeName,
+      css: active?.css ?? "",
+    });
+  }
+
   render = () => {
+    // 先落主题再重建界面，避免用旧配色渲染一帧。
+    applyTheme();
+
     interaction.beforeRender();
 
     const view = buildView(store.getData(), store.getUi());
@@ -83,12 +103,6 @@ async function main() {
     );
 
     interaction.afterRender();
-
-    const themeName = view.settings.theme;
-    if (themeName !== lastTheme) {
-      lastTheme = themeName;
-      theme.set(themeName);
-    }
   };
 
   const api = tauriApi();

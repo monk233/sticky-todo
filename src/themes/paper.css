@@ -1,0 +1,64 @@
+/* @name 纸本便签 */
+
+/* 暖白纸、黑墨、朱砂。任务行去掉描边，改用纸片阴影堆叠；
+   完成状态用一道偏浓的朱砂痕代替普通删除线。 */
+
+:root[data-theme="paper"] {
+  --bg: #f5f1e8;
+  --surface: #fffdf7;
+  --surface-soft: #efe9db;
+  --sidebar: #f0ebdf;
+  --border: #e2dac8;
+  --border-strong: #cabfa6;
+  --text: #232019;
+  --text-soft: #5f594c;
+  --text-faint: #8b8373;
+  --accent: #b23a2f;
+  --accent-soft: rgba(178, 58, 47, 0.11);
+  --accent-contrast: #fffaf4;
+  --danger: #a8322a;
+  --danger-soft: rgba(168, 50, 42, 0.11);
+  --warn: #9a6b1f;
+  --scrim: rgba(35, 32, 25, 0.42);
+
+  --shadow-soft: 0 1px 1px rgba(72, 60, 40, 0.07);
+  --shadow-panel: 0 16px 40px rgba(60, 50, 32, 0.18);
+
+  --task-bg: #fffdf6;
+  --task-border: transparent;
+  --task-shadow: 0 1px 2px rgba(74, 62, 42, 0.07), 0 4px 12px rgba(74, 62, 42, 0.06);
+  --task-radius: 3px;
+  --task-padding: 12px 14px;
+  --done-decoration: line-through;
+  --done-thickness: 2px;
+  --done-color: rgba(178, 58, 47, 0.5);
+  --done-skip-ink: none;
+  --cursor-ring: 0 0 0 2px var(--accent-soft), 0 4px 14px rgba(74, 62, 42, 0.1);
+}
+
+:root[data-theme="paper"][data-appearance="dark"] {
+  --bg: #18150f;
+  --surface: #211d16;
+  --surface-soft: #2a251c;
+  --sidebar: #1c1813;
+  --border: #332c21;
+  --border-strong: #473d2e;
+  --text: #ece4d5;
+  --text-soft: #a79d8b;
+  --text-faint: #7c7464;
+  --accent: #d2664e;
+  --accent-soft: rgba(210, 102, 78, 0.16);
+  --accent-contrast: #1a120d;
+  --danger: #d75f52;
+  --danger-soft: rgba(215, 95, 82, 0.16);
+  --warn: #c08b32;
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.34);
+  --shadow-panel: 0 18px 44px rgba(0, 0, 0, 0.58);
+
+  --task-bg: #221e17;
+  --task-border: transparent;
+  --task-shadow: 0 1px 2px rgba(0, 0, 0, 0.36), 0 5px 16px rgba(0, 0, 0, 0.3);
+  --done-color: rgba(210, 102, 78, 0.55);
+}

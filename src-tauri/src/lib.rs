@@ -4,11 +4,13 @@
 //! - `config`：本机数据目录的位置；
 //! - `store`：data.json 的原子读写；
 //! - `images`：图片导入；
-//! - 本文件：把上面三者包装成 IPC 命令，并管理窗口、托盘与全局快捷键。
+//! - `themes`：自定义主题文件的读取；
+//! - 本文件：把上面四者包装成 IPC 命令，并管理窗口、托盘与全局快捷键。
 
 mod config;
 mod images;
 mod store;
+mod themes;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -372,22 +374,37 @@ fn import_image_bytes(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn open_data_dir(state: State<'_, AppState>) -> Result<(), String> {
-    let dir = current_data_dir(&state);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建 {}：{e}", dir.display()))?;
+/// 用系统文件管理器打开一个目录，不存在时先创建。
+fn open_directory(dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("无法创建 {}：{e}", dir.display()))?;
 
     #[cfg(windows)]
-    let spawned = std::process::Command::new("explorer").arg(&dir).spawn();
+    let spawned = std::process::Command::new("explorer").arg(dir).spawn();
 
     #[cfg(target_os = "macos")]
-    let spawned = std::process::Command::new("open").arg(&dir).spawn();
+    let spawned = std::process::Command::new("open").arg(dir).spawn();
 
     #[cfg(all(unix, not(target_os = "macos")))]
-    let spawned = std::process::Command::new("xdg-open").arg(&dir).spawn();
+    let spawned = std::process::Command::new("xdg-open").arg(dir).spawn();
 
-    spawned.map_err(|e| format!("打开数据目录失败：{e}"))?;
+    spawned.map_err(|e| format!("打开目录失败：{e}"))?;
     Ok(())
+}
+
+#[tauri::command]
+fn open_data_dir(state: State<'_, AppState>) -> Result<(), String> {
+    open_directory(&current_data_dir(&state))
+}
+
+#[tauri::command]
+fn open_themes_dir(state: State<'_, AppState>) -> Result<(), String> {
+    open_directory(&current_data_dir(&state).join("themes"))
+}
+
+#[tauri::command]
+fn list_user_themes(state: State<'_, AppState>) -> Result<Vec<themes::ThemeFile>, String> {
+    let dir = current_data_dir(&state).join("themes");
+    themes::load_user_themes(&dir).map_err(|e| format!("读取主题目录失败：{e}"))
 }
 
 #[tauri::command]
@@ -530,6 +547,8 @@ pub fn run() {
             import_image,
             import_image_bytes,
             open_data_dir,
+            open_themes_dir,
+            list_user_themes,
             pick_directory,
             pick_image,
             get_autostart,
