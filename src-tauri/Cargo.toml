@@ -1,6 +1,6 @@
 [package]
 name = "sticky-todo"
-version = "1.0.0"
+version = "1.1.0"
 description = "轻量级桌面便签与待办清单"
 authors = ["monk233"]
 edition = "2021"
