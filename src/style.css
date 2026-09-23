@@ -566,7 +566,9 @@ button {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--bg);
+  /* 刻意不给背景：底色由 body 提供，氛围层才有机会透出来。
+     这里一旦铺上不透明底色，主题配的流动光斑与树影就全被盖住了。 */
+  background: transparent;
 }
 
 .workspace__head {
