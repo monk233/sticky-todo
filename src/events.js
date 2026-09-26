@@ -8,6 +8,12 @@ const MODIFIER_ONLY = new Set(["Control", "Shift", "Alt", "Meta", "CapsLock", "D
 /** 两次点击同一行的间隔在此之内，算双击。 */
 const DOUBLE_CLICK_MS = 400;
 
+/** 搜索框每敲一下都重建整棵 DOM 太吵，等手停一下再过滤。 */
+const SEARCH_DELAY_MS = 140;
+
+/** 值由状态提供、只需要在重建后找回焦点与光标的输入框。 */
+const FOCUS_ACTIONS = new Set(["search", "tag-editor"]);
+
 function extensionOf(file) {
   const name = typeof file.name === "string" ? file.name : "";
   const dot = name.lastIndexOf(".");
@@ -34,11 +40,14 @@ function acceleratorFrom(event) {
 
 export function createInteraction({ host, store, invoke }) {
   let editorMemory = { key: null, value: null, start: null, end: null };
+  let focusMemory = null;
   let scrollTops = [];
   let lastTaskClick = { id: null, at: 0 };
+  let searchTimer = null;
+  let searchComposing = false;
 
   // 状态一变就重建整棵 DOM，滚动位置得手动延续。
-  const SCROLLABLE = ".groups, .tasks, .sections, .settings__body";
+  const SCROLLABLE = ".views, .groups, .tasks, .sections, .settings__body";
 
   function captureScroll() {
     scrollTops = Array.from(host.querySelectorAll(SCROLLABLE)).map(
@@ -164,6 +173,13 @@ export function createInteraction({ host, store, invoke }) {
         store.renameGroup(input.dataset.id, input.value);
       }
     }
+
+    if (ui.editingTag) {
+      const input = host.querySelector(".tag-item__editor");
+      if (input && !input.contains(target)) {
+        store.commitRenameTag(input.dataset.tag, input.value);
+      }
+    }
   }
 
   function handleClick(event) {
@@ -171,6 +187,11 @@ export function createInteraction({ host, store, invoke }) {
     if (!target || !host.contains(target)) return;
 
     flushEditing(target);
+
+    // 标签菜单是浮层，点到别处就收起来；这次点击的其它含义照常处理。
+    if (store.getUi().tagMenu && !target.closest(".tag-menu")) {
+      store.closeTagMenu();
+    }
 
     if (detectTaskDoubleClick(target)) return;
 
@@ -181,6 +202,10 @@ export function createInteraction({ host, store, invoke }) {
       case "settings-panel":
       case "editor":
       case "group-editor":
+      case "search":
+      case "tag-editor":
+      case "tag-rename-editor":
+      case "tag-menu":
         return;
 
       case "settings-backdrop":
@@ -217,6 +242,30 @@ export function createInteraction({ host, store, invoke }) {
 
       case "toggle-collapse":
         store.toggleCollapse(id);
+        return;
+
+      case "select-view":
+        store.setView({ kind: target.dataset.kind });
+        return;
+
+      case "select-tag":
+        store.setView({ kind: "tag", tag: target.dataset.tag });
+        return;
+
+      case "add-tag":
+        store.openTagEditor(id);
+        return;
+
+      case "remove-tag":
+        store.removeTag(id, target.dataset.tag);
+        return;
+
+      case "tag-menu-rename":
+        store.startRenameTag(target.dataset.tag);
+        return;
+
+      case "tag-menu-delete":
+        store.confirmDeleteTag();
         return;
 
       case "add-task":
@@ -302,6 +351,57 @@ export function createInteraction({ host, store, invoke }) {
     }
   }
 
+  function focusSearch() {
+    const input = host.querySelector('[data-action="search"]');
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    input.select();
+  }
+
+  /**
+   * 搜索框等手停一下再过滤。
+   *
+   * 每敲一下就重建整棵 DOM 会把光标搅乱，也会打断输入法的组字过程，所以
+   * 组字期间一律不排期，等 compositionend 之后再排队。
+   */
+  function scheduleSearch(value) {
+    if (searchTimer !== null) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchTimer = null;
+      if (searchComposing) return;
+      store.setQuery(value);
+    }, SEARCH_DELAY_MS);
+  }
+
+  function handleInput(event) {
+    const target = event.target;
+    if (!target || target.dataset?.action !== "search") return;
+    if (event.isComposing) return;
+    scheduleSearch(target.value);
+  }
+
+  function handleCompositionStart(event) {
+    if (event.target?.dataset?.action === "search") searchComposing = true;
+  }
+
+  function handleCompositionEnd(event) {
+    if (event.target?.dataset?.action !== "search") return;
+    searchComposing = false;
+    scheduleSearch(event.target.value);
+  }
+
+  /** 标签项的右键菜单：点在别处就收起来。 */
+  function handleContextMenu(event) {
+    const item = event.target.closest("[data-action='select-tag']");
+    if (!item || !host.contains(item)) {
+      if (store.getUi().tagMenu) store.closeTagMenu();
+      return;
+    }
+
+    event.preventDefault();
+    store.openTagMenu(item.dataset.tag, event.clientX, event.clientY);
+  }
+
   /**
    * 自己判定「双击任务行」。
    *
@@ -352,6 +452,48 @@ export function createInteraction({ host, store, invoke }) {
 
     if (inEditor) {
       const action = active.dataset ? active.dataset.action : null;
+
+      if (action === "search") {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          // 先放手再清空：重建之后 focusMemory 已经是空的，焦点不会被还回来。
+          active.blur();
+          store.setQuery("");
+        }
+        return;
+      }
+
+      if (action === "tag-editor") {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          const id = active.dataset.id;
+          const value = active.value;
+          // 直接把输入框清空，这样重建前 captureEditor 记到的就是空值。
+          active.value = "";
+          store.addTag(id, value);
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          store.closeTagEditor();
+        }
+        return;
+      }
+
+      if (action === "tag-rename-editor") {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          store.commitRenameTag(active.dataset.tag, active.value);
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          // 改成原来的名字就等于取消。
+          store.commitRenameTag(active.dataset.tag, active.dataset.tag);
+        }
+        return;
+      }
+
       if (action === "editor") {
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();
@@ -393,6 +535,12 @@ export function createInteraction({ host, store, invoke }) {
         event.preventDefault();
         store.patchUi({ previewImage: null });
       }
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      focusSearch();
       return;
     }
 
@@ -486,6 +634,27 @@ export function createInteraction({ host, store, invoke }) {
         if (store.getUi().editingGroupId !== id) return;
         store.renameGroup(id, value);
       }, 0);
+      return;
+    }
+
+    if (target instanceof HTMLInputElement && target.dataset.action === "tag-editor") {
+      const id = target.dataset.id;
+      const value = target.value;
+      setTimeout(() => {
+        if (store.getUi().tagEditorTaskId !== id) return;
+        if (value.trim() !== "") store.addTag(id, value);
+        store.closeTagEditor();
+      }, 0);
+      return;
+    }
+
+    if (target instanceof HTMLInputElement && target.dataset.action === "tag-rename-editor") {
+      const tag = target.dataset.tag;
+      const value = target.value;
+      setTimeout(() => {
+        if (store.getUi().editingTag !== tag) return;
+        store.commitRenameTag(tag, value);
+      }, 0);
     }
   }
 
@@ -512,49 +681,86 @@ export function createInteraction({ host, store, invoke }) {
     });
   }
 
-  function captureEditor() {
-    const editor = host.querySelector(".task__editor");
-    if (editor) {
-      editorMemory = {
-        key: `task:${editor.dataset.id}`,
-        value: editor.value,
-        start: editor.selectionStart,
-        end: editor.selectionEnd,
-      };
+  /** 值由状态提供的输入框（搜索框、标签输入行）只需要记住焦点落在谁身上。 */
+  function captureFocus() {
+    const active = document.activeElement;
+    const action = active && active.dataset ? active.dataset.action : null;
+    if (!action || !FOCUS_ACTIONS.has(action)) {
+      focusMemory = null;
       return;
     }
-    const groupEditor = host.querySelector(".group__editor");
-    if (groupEditor) {
-      editorMemory = {
-        key: `group:${groupEditor.dataset.id}`,
-        value: groupEditor.value,
-        start: groupEditor.selectionStart,
-        end: groupEditor.selectionEnd,
-      };
-    }
+
+    focusMemory = {
+      action,
+      id: active.dataset.id ?? "",
+      start: active.selectionStart,
+      end: active.selectionEnd,
+    };
+  }
+
+  function restoreFocus() {
+    const memory = focusMemory;
+    focusMemory = null;
+    if (!memory) return;
+
+    const node = host.querySelector(
+      memory.id
+        ? `[data-action="${memory.action}"][data-id="${memory.id}"]`
+        : `[data-action="${memory.action}"]`
+    );
+    if (!node) return;
+
+    node.focus({ preventScroll: true });
+    if (typeof node.setSelectionRange !== "function") return;
+
+    const end = Number.isFinite(memory.end) ? memory.end : node.value.length;
+    const start = Number.isFinite(memory.start) ? memory.start : end;
+    node.setSelectionRange(start, end);
+  }
+
+  function activeEditorNode() {
+    return host.querySelector(".task__editor, .group__editor, .tag-item__editor, .tag-input");
+  }
+
+  function editorKeyOf(node) {
+    if (node.classList.contains("task__editor")) return `task:${node.dataset.id}`;
+    if (node.classList.contains("group__editor")) return `group:${node.dataset.id}`;
+    if (node.classList.contains("tag-item__editor")) return `tag:${node.dataset.tag}`;
+    return `tag-input:${node.dataset.id}`;
+  }
+
+  function captureEditor() {
+    const node = activeEditorNode();
+    if (!node) return;
+
+    editorMemory = {
+      key: editorKeyOf(node),
+      value: node.value,
+      start: node.selectionStart,
+      end: node.selectionEnd,
+    };
   }
 
   function restoreEditor() {
-    const editor = host.querySelector(".task__editor");
-    const groupEditor = host.querySelector(".group__editor");
-    const node = editor ?? groupEditor;
+    const node = activeEditorNode();
     if (!node) {
       editorMemory = { key: null, value: null, start: null, end: null };
       return;
     }
 
-    const key = `${editor ? "task" : "group"}:${node.dataset.id}`;
+    const isTaskEditor = node.classList.contains("task__editor");
+    const key = editorKeyOf(node);
+
     if (editorMemory.key !== key) {
+      const task = isTaskEditor
+        ? store.getData().tasks.find((item) => item.id === node.dataset.id)
+        : null;
       editorMemory = {
         key,
-        value: editor ? "" : node.value,
+        value: task ? task.text : node.value,
         start: null,
         end: null,
       };
-      if (editor) {
-        const task = store.getData().tasks.find((item) => item.id === node.dataset.id);
-        editorMemory.value = task ? task.text : "";
-      }
     }
 
     node.value = editorMemory.value ?? "";
@@ -571,16 +777,22 @@ export function createInteraction({ host, store, invoke }) {
   host.addEventListener("click", handleClick);
   host.addEventListener("paste", handlePaste);
   host.addEventListener("focusout", handleFocusOut);
+  host.addEventListener("input", handleInput);
+  host.addEventListener("contextmenu", handleContextMenu);
+  host.addEventListener("compositionstart", handleCompositionStart);
+  host.addEventListener("compositionend", handleCompositionEnd);
   window.addEventListener("keydown", handleKeyDown);
   registerTauriDragDrop();
 
   function beforeRender() {
     captureEditor();
+    captureFocus();
     captureScroll();
   }
 
   function afterRender() {
     restoreEditor();
+    restoreFocus();
     restoreScroll();
     clearEntering();
   }
