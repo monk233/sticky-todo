@@ -4,7 +4,13 @@
 // 所有交互都写成 data-action 属性，由 events.js 统一委托处理。
 
 import { icons } from "./icons.js";
-import { formatStamp, formatFullStamp, formatAccelerator } from "./model.js";
+import {
+  formatStamp,
+  formatFullStamp,
+  formatAccelerator,
+  highlight,
+  taskTags,
+} from "./model.js";
 import { themeVariable } from "./theme.js";
 
 function h(tag, props = {}, ...children) {
@@ -43,7 +49,47 @@ function iconButton({ name, action, label, dataset = {}, extraClass = "", disabl
   });
 }
 
-function renderSidebar(view, ctx) {
+function renderSearchBox(view) {
+  return h(
+    "div",
+    { class: "sidebar__search" },
+    h("span", { class: "sidebar__search-icon", html: icons.search }),
+    h("input", {
+      class: "search-input",
+      type: "search",
+      spellcheck: "false",
+      autocomplete: "off",
+      placeholder: "搜索待办",
+      value: view.query,
+      dataset: { action: "search" },
+    })
+  );
+}
+
+const VIEW_ICONS = { all: "layers", untagged: "inbox" };
+
+function renderFixedViews(view) {
+  return h(
+    "nav",
+    { class: "views__fixed", "aria-label": "视图" },
+    view.viewItems.map((item) => {
+      const icon = icons[VIEW_ICONS[item.key] ?? "layers"] ?? icons.layers;
+      return h(
+        "button",
+        {
+          class: `view-item ${item.active ? "is-active" : ""}`.trim(),
+          type: "button",
+          dataset: { action: "select-view", kind: item.key },
+          title: item.label,
+        },
+        h("span", { class: "view-item__icon", html: icon }),
+        h("span", { class: "view-item__name" }, item.label)
+      );
+    })
+  );
+}
+
+function renderGroupSection(view, ctx) {
   const items = view.groups.map(({ group, count, active }) => {
     if (ctx.ui.editingGroupId === group.id) {
       return h(
@@ -62,7 +108,7 @@ function renderSidebar(view, ctx) {
     return h(
       "button",
       {
-        class: `group ${active ? "is-active" : ""}`,
+        class: `group ${active ? "is-active" : ""}`.trim(),
         type: "button",
         dataset: { action: "select-group", id: group.id },
         title: group.name,
@@ -73,6 +119,67 @@ function renderSidebar(view, ctx) {
   });
 
   return h(
+    "section",
+    { class: "views__section" },
+    h(
+      "header",
+      { class: "views__head" },
+      h("span", { class: "views__title" }, "分组"),
+      iconButton({
+        name: "plus",
+        action: "add-group",
+        label: "添加分组",
+        extraClass: "icon-button--small",
+      })
+    ),
+    h("nav", { class: "groups", "aria-label": "分组" }, items)
+  );
+}
+
+function renderTagSection(view, ctx) {
+  // 一个标签都没有时不占位置，省得空区段白站着。
+  if (view.tags.length === 0) return null;
+
+  const items = view.tags.map(({ tag, count, active }) => {
+    if (ctx.ui.editingTag === tag) {
+      return h(
+        "div",
+        { class: "tag-item tag-item--editing" },
+        h("input", {
+          class: "tag-item__editor",
+          type: "text",
+          spellcheck: "false",
+          maxlength: 24,
+          value: tag,
+          dataset: { action: "tag-rename-editor", tag },
+        })
+      );
+    }
+
+    return h(
+      "button",
+      {
+        class: `tag-item ${active ? "is-active" : ""}`.trim(),
+        type: "button",
+        dataset: { action: "select-tag", tag },
+        title: `只看带「${tag}」的待办，右键管理`,
+      },
+      h("span", { class: "tag-item__icon", html: icons.tag }),
+      h("span", { class: "tag-item__name" }, tag),
+      h("span", { class: "tag-item__count" }, String(count))
+    );
+  });
+
+  return h(
+    "section",
+    { class: "views__section" },
+    h("header", { class: "views__head" }, h("span", { class: "views__title" }, "标签")),
+    h("nav", { class: "tags", "aria-label": "标签" }, items)
+  );
+}
+
+function renderSidebar(view, ctx) {
+  return h(
     "aside",
     { class: "sidebar" },
     h(
@@ -81,16 +188,17 @@ function renderSidebar(view, ctx) {
       h("span", { class: "sidebar__mark", html: icons.check }),
       h("span", { class: "sidebar__title" }, "待办便签")
     ),
-    h("nav", { class: "groups", "aria-label": "分组" }, items),
+    renderSearchBox(view),
+    h(
+      "div",
+      { class: "views" },
+      renderFixedViews(view),
+      renderGroupSection(view, ctx),
+      renderTagSection(view, ctx)
+    ),
     h(
       "div",
       { class: "sidebar__foot" },
-      h(
-        "button",
-        { class: "ghost-button", type: "button", dataset: { action: "add-group" } },
-        h("span", { class: "ghost-button__icon", html: icons.plus }),
-        "添加分组"
-      ),
       iconButton({ name: "settings", action: "open-settings", label: "设置" })
     )
   );
@@ -148,7 +256,66 @@ function renderThumbs(task, assetUrl) {
   );
 }
 
-function renderTask(task, view, ctx) {
+/** 正文按搜索词切段：命中的部分包一层 mark，其余保持纯文本节点。 */
+function renderRichText(text, query) {
+  return highlight(text || "（空）", query).map((piece) =>
+    piece.hit ? h("mark", { class: "hit" }, piece.text) : document.createTextNode(piece.text)
+  );
+}
+
+function renderTagEditorInput(task) {
+  return h("input", {
+    class: "tag-input",
+    type: "text",
+    spellcheck: "false",
+    maxlength: 24,
+    placeholder: "输入标签，Enter 添加",
+    dataset: { action: "tag-editor", id: task.id },
+  });
+}
+
+/** 任务行里的标签：点胶囊切到该标签视图，× 只从这一条上移除。 */
+function renderTagRow(task, view, ctx, { alwaysInput = false } = {}) {
+  const tags = taskTags(task);
+  const showInput = alwaysInput || ctx.ui.tagEditorTaskId === task.id;
+  if (tags.length === 0 && !showInput) return null;
+
+  const chips = tags.map((tag) =>
+    h(
+      "span",
+      { class: "tag-chip" },
+      h(
+        "button",
+        {
+          class: "tag-chip__name",
+          type: "button",
+          dataset: { action: "select-tag", tag },
+          title: `只看带「${tag}」的待办`,
+        },
+        renderRichText(tag, view.query)
+      ),
+      view.settings.hideActions
+        ? null
+        : h("button", {
+            class: "tag-chip__remove",
+            type: "button",
+            title: `移除标签「${tag}」`,
+            "aria-label": `移除标签「${tag}」`,
+            dataset: { action: "remove-tag", id: task.id, tag },
+            html: icons.close,
+          })
+    )
+  );
+
+  return h(
+    "div",
+    { class: "task__tags" },
+    chips.length > 0 ? h("div", { class: "tag-chips" }, chips) : null,
+    showInput ? renderTagEditorInput(task) : null
+  );
+}
+
+function renderTask(task, view, ctx, { groupName = "" } = {}) {
   const { ui, assetUrl } = ctx;
   const { settings } = view;
 
@@ -163,6 +330,7 @@ function renderTask(task, view, ctx) {
         placeholder: "写下要做的事，Enter 保存",
         dataset: { action: "editor", id: task.id },
       }),
+      renderTagRow(task, view, ctx, { alwaysInput: true }),
       h("div", { class: "task__hint" }, "Enter 或点击别处保存 · Shift + Enter 换行 · Esc 取消")
     );
   }
@@ -180,14 +348,19 @@ function renderTask(task, view, ctx) {
   const body = h(
     "div",
     { class: "task__main" },
-    h("div", { class: "task__text" }, task.text || "（空）"),
+    groupName
+      ? h("div", { class: "task__badges" }, h("span", { class: "task__group" }, groupName))
+      : null,
+    h("div", { class: "task__text" }, renderRichText(task.text, view.query)),
     renderThumbs(task, assetUrl),
+    renderTagRow(task, view, ctx),
     renderTaskMeta(task, settings)
   );
 
   const tools = h(
     "div",
     { class: "task__tools" },
+    iconButton({ name: "tag", action: "add-tag", label: "添加标签", dataset: { id: task.id } }),
     iconButton({ name: "image", action: "add-image", label: "添加图片", dataset: { id: task.id } }),
     iconButton({ name: "pencil", action: "edit-task", label: "编辑", dataset: { id: task.id } }),
     iconButton({
@@ -345,11 +518,50 @@ function renderListWorkspace(view, ctx) {
       h(
         "div",
         { class: "workspace__title" },
-        h("h1", {}, "全部待办"),
+        h("h1", {}, "按分组"),
         h("span", { class: "workspace__count" }, `${view.totalUnfinished} 项未完成`)
       )
     ),
     h("div", { class: "sections" }, sections)
+  );
+}
+
+/** 空结果的说明文案：搜索、视图、分组各有各的说法。 */
+function emptyHintOf(view) {
+  if (view.query !== "") return "没有匹配的待办。";
+  if (view.view.kind === "untagged") return "没有不带标签的待办。";
+  if (view.view.kind === "tag") return `没有带「${view.view.tag}」标签的待办。`;
+  return "这里还没有待办。按 Ctrl + N 新建一条。";
+}
+
+/** 跨分组的降平列表：全部、无标签、某个标签，以及搜索结果都走这里。 */
+function renderFlatWorkspace(view, ctx) {
+  const rows = view.flatTasks ?? [];
+
+  return h(
+    "main",
+    { class: "workspace" },
+    h(
+      "header",
+      { class: "workspace__head" },
+      h(
+        "div",
+        { class: "workspace__title" },
+        h("h1", {}, view.flatTitle),
+        h("span", { class: "workspace__count" }, `${rows.length} 项`)
+      )
+    ),
+    rows.length === 0
+      ? h(
+          "div",
+          { class: "empty empty--inline" },
+          h("p", { class: "empty__hint" }, emptyHintOf(view))
+        )
+      : h(
+          "ul",
+          { class: "tasks tasks--flat" },
+          rows.map((row) => renderTask(row.task, view, ctx, { groupName: row.groupName }))
+        )
   );
 }
 
@@ -697,6 +909,43 @@ function renderLightbox(ctx) {
   );
 }
 
+/** 标签的右键菜单：重命名，以及从全部任务上移除。 */
+function renderTagMenu(ctx) {
+  const menu = ctx.ui.tagMenu;
+  if (!menu) return null;
+
+  const left = Math.max(8, Math.min(menu.x, window.innerWidth - 200));
+  const top = Math.max(8, Math.min(menu.y, window.innerHeight - 110));
+
+  return h(
+    "div",
+    {
+      class: "tag-menu",
+      style: `left:${left}px; top:${top}px`,
+      dataset: { action: "tag-menu" },
+      role: "menu",
+    },
+    h(
+      "button",
+      {
+        class: "tag-menu__item",
+        type: "button",
+        dataset: { action: "tag-menu-rename", tag: menu.tag },
+      },
+      "重命名标签"
+    ),
+    h(
+      "button",
+      {
+        class: `tag-menu__item tag-menu__item--danger ${menu.confirming ? "is-confirming" : ""}`.trim(),
+        type: "button",
+        dataset: { action: "tag-menu-delete", tag: menu.tag },
+      },
+      menu.confirming ? "再点一次确认移除" : "从全部任务移除"
+    )
+  );
+}
+
 function renderToasts(ui) {
   if (!ui.toasts || ui.toasts.length === 0) return null;
   return h(
@@ -718,13 +967,17 @@ function renderToasts(ui) {
 export function renderApp(view, ctx) {
   const root = h("div", { class: `app app--${view.layout}` });
 
-  root.append(
-    renderSidebar(view, ctx),
-    view.layout === "list" ? renderListWorkspace(view, ctx) : renderPanelWorkspace(view, ctx)
-  );
+  const workspace = view.flat
+    ? renderFlatWorkspace(view, ctx)
+    : view.layout === "list"
+      ? renderListWorkspace(view, ctx)
+      : renderPanelWorkspace(view, ctx);
+
+  root.append(renderSidebar(view, ctx), workspace);
 
   if (ctx.ui.settingsOpen) root.append(renderSettings(view, ctx));
   if (ctx.ui.previewImage) root.append(renderLightbox(ctx));
+  if (ctx.ui.tagMenu) root.append(renderTagMenu(ctx));
 
   const toasts = renderToasts(ctx.ui);
   if (toasts) root.append(toasts);
