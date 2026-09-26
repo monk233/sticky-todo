@@ -1,0 +1,109 @@
+/* @name 方块世界 */
+
+/* 沙盒像素风的基础一套。明亮面是草原白天：草方块的绿做背景，面板沿用
+   经典界面那套灰，任务行靠上下两色的内阴影做出按钮浮雕。暗黑面是同一
+   个世界入夜后的洞穴，深板岩打底，荧石的暖黄做强调。
+
+   背景压着一层四像素网格，像放大后的方块贴图；圆角全部归零，圆的地方
+   一律切角。像素字体只有在系统装了时才生效，装了就整界面切过去，没装
+   则回退等宽，不下载任何字体文件。 */
+
+:root[data-theme="minecraft"] {
+  --bg: #91bd59;
+  --surface: #d4d4d4;
+  --surface-soft: #bcbcbc;
+  --sidebar: #c9c9c9;
+  --border: #5f5f5f;
+  --border-strong: #2f2f2f;
+  --text: #1b1b1b;
+  --text-soft: #4b4b4b;
+  --text-faint: #585858;
+  --accent: #35741d;
+  --accent-soft: rgba(53, 116, 29, 0.12);
+  --accent-contrast: #f7fff2;
+  --danger: #b02e26;
+  --danger-soft: rgba(176, 46, 38, 0.16);
+  --warn: #8a6112;
+  --scrim: rgba(18, 24, 12, 0.5);
+
+  --font-body: "Minecraft", "Minecraftia", "Pixelify Sans", "Silkscreen", "Fusion Pixel 12px monospaced", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-display: "Minecraft", "Minecraftia", "Pixelify Sans", "Silkscreen", "Fusion Pixel 12px monospaced", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-pill: 0;
+
+  --shadow-soft: 0 2px 0 rgba(20, 30, 12, 0.22);
+  --shadow-panel: 0 0 0 3px #2f2f2f, 0 6px 0 rgba(20, 30, 12, 0.3);
+
+  --task-bg: #d4d4d4;
+  --task-border: #565656;
+  --task-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.55),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.26);
+  --task-radius: 0;
+  --task-padding: 10px 12px;
+  --done-decoration: line-through;
+  --done-thickness: 2px;
+  --done-color: rgba(53, 116, 29, 0.85);
+  --done-skip-ink: none;
+  --cursor-ring: inset 2px 2px 0 rgba(255, 255, 255, 0.55),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.26), 0 0 0 2px #35741d;
+
+  --texture-image: repeating-linear-gradient(
+      90deg,
+      rgba(24, 32, 16, 0.05) 0 1px,
+      transparent 1px 4px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(24, 32, 16, 0.05) 0 1px,
+      transparent 1px 4px
+    );
+  --texture-opacity: 0.55;
+  --texture-blend: multiply;
+}
+
+:root[data-theme="minecraft"][data-appearance="dark"] {
+  --bg: #15161a;
+  --surface: #24252b;
+  --surface-soft: #2e2f36;
+  --sidebar: #1c1d22;
+  --border: #3a3b42;
+  --border-strong: #55565e;
+  --text: #e6e7ea;
+  --text-soft: #a3a5ad;
+  --text-faint: #8e9099;
+  --accent: #f0c144;
+  --accent-soft: rgba(240, 193, 68, 0.16);
+  --accent-contrast: #1b1405;
+  --danger: #d64533;
+  --danger-soft: rgba(214, 69, 51, 0.18);
+  --warn: #e0a83c;
+  --scrim: rgba(0, 0, 0, 0.62);
+
+  --shadow-soft: 0 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-panel: 0 0 0 3px #0c0d10, 0 6px 0 rgba(0, 0, 0, 0.5);
+
+  --task-bg: #26272d;
+  --task-border: #3f4046;
+  --task-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.06),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.42);
+  --done-color: rgba(240, 193, 68, 0.6);
+  --cursor-ring: inset 2px 2px 0 rgba(255, 255, 255, 0.06),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.42), 0 0 0 2px #f0c144;
+
+  --texture-image: repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.035) 0 1px,
+      transparent 1px 4px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.035) 0 1px,
+      transparent 1px 4px
+    );
+  --texture-opacity: 0.6;
+  --texture-blend: screen;
+}

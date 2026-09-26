@@ -235,6 +235,24 @@ test("把 --bg 写成渐变的主题必须自带 --inverse-text", () => {
   }
 });
 
+test("三个方块主题都走同一套像素方块语言", () => {
+  for (const id of ["minecraft", "minecraft-village", "minecraft-nether"]) {
+    const css = extractThemeCss(
+      readFileSync(new URL(`./themes/${id}.css`, import.meta.url), "utf8"),
+      id
+    );
+
+    assert.ok(css.includes("Minecraft"), `${id}: 字体栈里没有像素字体`);
+    assert.ok(/--radius-lg:\s*0/.test(css), `${id}: 圆角没有归零`);
+    assert.ok(/--task-shadow:\s*inset/.test(css), `${id}: 任务行缺浮雕内阴影`);
+    assert.ok(css.includes("repeating-linear-gradient"), `${id}: 缺像素纹理`);
+    assert.ok(
+      css.includes(`:root[data-theme="${id}"][data-appearance="dark"]`),
+      `${id}: 缺暗黑面`
+    );
+  }
+});
+
 test("流光溢影的纸张噪点是完整的 data URI", () => {
   const css = extractThemeCss(
     readFileSync(new URL("./themes/sunlit.css", import.meta.url), "utf8"),

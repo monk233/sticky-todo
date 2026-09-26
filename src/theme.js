@@ -19,6 +19,9 @@ export const BUILTIN_THEMES = [
   { id: "liquid-glass", name: "液态玻璃", file: "themes/liquid-glass.css" },
   { id: "industrial", name: "工业粗野", file: "themes/industrial.css" },
   { id: "terminal", name: "等宽终端", file: "themes/terminal.css" },
+  { id: "minecraft", name: "方块世界", file: "themes/minecraft.css" },
+  { id: "minecraft-village", name: "石木村庄", file: "themes/minecraft-village.css" },
+  { id: "minecraft-nether", name: "下界岩浆", file: "themes/minecraft-nether.css" },
 ];
 
 export function normalizeMode(value) {

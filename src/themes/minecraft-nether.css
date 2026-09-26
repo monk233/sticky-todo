@@ -1,0 +1,132 @@
+/* @name 下界岩浆 */
+
+/* 同源里最烈的一套。明亮面是下界砖砌的走廊，荧石与岩浆把砖烤成砖红，
+   底色本身就是暗的，文字全部反过来用暖白。暗黑面转入灵魂沙谷：紫黑底、
+   灵魂火的青蓝做强调，只有危险色还留着岩浆的橙红。
+
+   这一套多给了一层缓慢漂移的辉光，模拟岩浆在不远处流动的反光。 */
+
+:root[data-theme="minecraft-nether"] {
+  --bg: #6f2f24;
+  --surface: #8c4030;
+  --surface-soft: #7b3628;
+  --sidebar: #642a20;
+  --border: #4a1f18;
+  --border-strong: #2e120e;
+  --text: #ffe8d8;
+  --text-soft: #e6b79c;
+  --text-faint: #e0b49c;
+  --accent: #ffab3d;
+  --accent-soft: rgba(255, 171, 61, 0.14);
+  --accent-contrast: #2a1405;
+  --danger: #ff6a44;
+  --danger-soft: rgba(255, 106, 68, 0.22);
+  --warn: #f0c04a;
+  --scrim: rgba(24, 7, 4, 0.6);
+
+  --font-body: "Minecraft", "Minecraftia", "Pixelify Sans", "Silkscreen", "Fusion Pixel 12px monospaced", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-display: "Minecraft", "Minecraftia", "Pixelify Sans", "Silkscreen", "Fusion Pixel 12px monospaced", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-pill: 0;
+
+  --shadow-soft: 0 2px 0 rgba(24, 7, 4, 0.4);
+  --shadow-panel: 0 0 0 3px #2e120e, 0 6px 0 rgba(24, 7, 4, 0.5);
+
+  --task-bg: #7e3729;
+  --task-border: #2c100b;
+  --task-shadow: inset 2px 2px 0 rgba(255, 196, 150, 0.22),
+    inset -2px -2px 0 rgba(30, 8, 4, 0.42);
+  --task-radius: 0;
+  --task-padding: 10px 12px;
+  --done-decoration: line-through;
+  --done-thickness: 2px;
+  --done-color: rgba(255, 171, 61, 0.7);
+  --done-skip-ink: none;
+  --cursor-ring: inset 2px 2px 0 rgba(255, 196, 150, 0.22),
+    inset -2px -2px 0 rgba(30, 8, 4, 0.42), 0 0 0 2px #ffab3d;
+
+  /* 斜向的砖缝，交叠出岩浆在砖面下透出来的裂口 */
+  --texture-image: repeating-linear-gradient(
+      45deg,
+      rgba(255, 130, 40, 0.07) 0 2px,
+      transparent 2px 9px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(24, 7, 4, 0.16) 0 2px,
+      transparent 2px 11px
+    );
+  --texture-opacity: 0.7;
+  --texture-blend: overlay;
+
+  --ambient-image: radial-gradient(
+      32% 26% at 22% 78%,
+      rgba(255, 140, 60, 0.5),
+      transparent 68%
+    ),
+    radial-gradient(26% 22% at 74% 24%, rgba(245, 162, 44, 0.4), transparent 70%);
+  --ambient-opacity: 0.5;
+  --ambient-blur: 42px;
+  --ambient-blend: screen;
+  --ambient-animation: ambient-drift;
+  --ambient-duration: 62s;
+}
+
+:root[data-theme="minecraft-nether"][data-appearance="dark"] {
+  --bg: #1a1016;
+  --surface: #241820;
+  --surface-soft: #2e2029;
+  --sidebar: #1f141c;
+  --border: #3c2833;
+  --border-strong: #55394a;
+  --text: #eadfe6;
+  --text-soft: #b6a2ac;
+  --text-faint: #9a8590;
+  --accent: #46c8d8;
+  --accent-soft: rgba(70, 200, 216, 0.18);
+  --accent-contrast: #06181c;
+  --danger: #e0553c;
+  --danger-soft: rgba(224, 85, 60, 0.18);
+  --warn: #d7a13f;
+  --scrim: rgba(0, 0, 0, 0.64);
+
+  --shadow-soft: 0 2px 0 rgba(0, 0, 0, 0.52);
+  --shadow-panel: 0 0 0 3px #0d070b, 0 6px 0 rgba(0, 0, 0, 0.5);
+
+  --task-bg: #241820;
+  --task-border: #3c2833;
+  --task-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.06),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.45);
+  --done-color: rgba(70, 200, 216, 0.62);
+  --cursor-ring: inset 2px 2px 0 rgba(255, 255, 255, 0.06),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.45), 0 0 0 2px #46c8d8;
+
+  --texture-image: repeating-linear-gradient(
+      45deg,
+      rgba(70, 200, 216, 0.05) 0 1px,
+      transparent 1px 9px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(0, 0, 0, 0.2) 0 2px,
+      transparent 2px 11px
+    );
+  --texture-opacity: 0.65;
+  --texture-blend: screen;
+
+  --ambient-image: radial-gradient(
+      30% 24% at 26% 74%,
+      rgba(70, 200, 216, 0.42),
+      transparent 68%
+    ),
+    radial-gradient(24% 20% at 72% 28%, rgba(120, 90, 200, 0.34), transparent 70%);
+  --ambient-opacity: 0.42;
+  --ambient-blur: 46px;
+  --ambient-blend: screen;
+  --ambient-animation: ambient-drift;
+  --ambient-duration: 74s;
+}

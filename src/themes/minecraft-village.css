@@ -1,0 +1,108 @@
+/* @name 石木村庄 */
+
+/* 与「方块世界」同源，但换一套材质：明亮面是白天的木屋内部，橡木墙板打底，
+   桦木板做台面，圆石色的深描边，绿宝石绿做强调。暗黑面是同一间屋子到了
+   夜里，木色沉成蓝调，只留灯笼的暖黄当强调。
+
+   背景的纹理从方格换成木纹：竖着一道道窄纹，再压几条横着的板缝。 */
+
+:root[data-theme="minecraft-village"] {
+  --bg: #bf9868;
+  --surface: #e2cfa8;
+  --surface-soft: #cbb489;
+  --sidebar: #d6c199;
+  --border: #6b4f2f;
+  --border-strong: #46331d;
+  --text: #2c2114;
+  --text-soft: #5c4a33;
+  --text-faint: #5f4d38;
+  --accent: #22693f;
+  --accent-soft: rgba(34, 105, 63, 0.12);
+  --accent-contrast: #f3fff6;
+  --danger: #a8372a;
+  --danger-soft: rgba(168, 55, 42, 0.15);
+  --warn: #8a6414;
+  --scrim: rgba(44, 33, 20, 0.5);
+
+  --font-body: "Minecraft", "Minecraftia", "Pixelify Sans", "Silkscreen", "Fusion Pixel 12px monospaced", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-display: "Minecraft", "Minecraftia", "Pixelify Sans", "Silkscreen", "Fusion Pixel 12px monospaced", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-pill: 0;
+
+  --shadow-soft: 0 2px 0 rgba(70, 51, 29, 0.24);
+  --shadow-panel: 0 0 0 3px #46331d, 0 6px 0 rgba(70, 51, 29, 0.32);
+
+  --task-bg: #ead9b4;
+  --task-border: #7b5a33;
+  --task-shadow: inset 2px 2px 0 rgba(255, 246, 224, 0.7),
+    inset -2px -2px 0 rgba(107, 74, 38, 0.3);
+  --task-radius: 0;
+  --task-padding: 10px 12px;
+  --done-decoration: line-through;
+  --done-thickness: 2px;
+  --done-color: rgba(34, 105, 63, 0.85);
+  --done-skip-ink: none;
+  --cursor-ring: inset 2px 2px 0 rgba(255, 246, 224, 0.7),
+    inset -2px -2px 0 rgba(107, 74, 38, 0.3), 0 0 0 2px #22693f;
+
+  --texture-image: repeating-linear-gradient(
+      90deg,
+      rgba(107, 79, 47, 0.07) 0 1px,
+      transparent 1px 7px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(70, 51, 29, 0.05) 0 2px,
+      transparent 2px 26px
+    );
+  --texture-opacity: 0.6;
+  --texture-blend: multiply;
+}
+
+:root[data-theme="minecraft-village"][data-appearance="dark"] {
+  --bg: #151c26;
+  --surface: #26303c;
+  --surface-soft: #303b48;
+  --sidebar: #1d2530;
+  --border: #3c4855;
+  --border-strong: #586674;
+  --text: #e6e0d2;
+  --text-soft: #a8a396;
+  --text-faint: #a29b87;
+  --accent: #e5a13c;
+  --accent-soft: rgba(229, 161, 60, 0.16);
+  --accent-contrast: #1c1305;
+  --danger: #cf5540;
+  --danger-soft: rgba(207, 85, 64, 0.17);
+  --warn: #d8b24a;
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  --shadow-soft: 0 2px 0 rgba(0, 0, 0, 0.46);
+  --shadow-panel: 0 0 0 3px #0b1119, 0 6px 0 rgba(0, 0, 0, 0.48);
+
+  --task-bg: #26303c;
+  --task-border: #3f4b59;
+  --task-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.07),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.4);
+  --done-color: rgba(229, 161, 60, 0.8);
+  --cursor-ring: inset 2px 2px 0 rgba(255, 255, 255, 0.07),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.4), 0 0 0 2px #e5a13c;
+
+  /* 夜里的木板只剩一层冷光，纹路比白天更细 */
+  --texture-image: repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.03) 0 1px,
+      transparent 1px 7px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.022) 0 1px,
+      transparent 1px 13px
+    );
+  --texture-opacity: 0.7;
+  --texture-blend: screen;
+}
