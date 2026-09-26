@@ -20,7 +20,7 @@ export const DEFAULT_SETTINGS = {
 
 export function createEmptyData() {
   return {
-    version: 1,
+    version: 2,
     settings: { ...DEFAULT_SETTINGS },
     groups: [],
     tasks: [],
@@ -86,11 +86,196 @@ export function allTasksOrdered(state) {
   return sortTasks(list, false);
 }
 
+// ---- 视图与筛选 ------------------------------------------------------
+
+export const VIEW_KINDS = ["group", "all", "untagged", "tag"];
+
+function normalizeQuery(query) {
+  return String(query ?? "").trim();
+}
+
+function normalizeTag(tag) {
+  return String(tag ?? "").trim();
+}
+
+/** 任务上真正算数的标签：去首尾空白、丢掉空项、同一任务内去重。 */
+export function taskTags(task) {
+  const seen = new Set();
+  const result = [];
+  for (const raw of task?.tags ?? []) {
+    const name = normalizeTag(raw);
+    if (name === "" || seen.has(name)) continue;
+    seen.add(name);
+    result.push(name);
+  }
+  return result;
+}
+
+/** 把 ui.view 归一化成视图描述；缺字段或取值不认识时回落到分组视图。 */
+export function resolveView(ui) {
+  const raw = ui?.view ?? {};
+  if (raw.kind === "all" || raw.kind === "untagged") {
+    return { kind: raw.kind, tag: "" };
+  }
+  if (raw.kind === "tag") {
+    const tag = normalizeTag(raw.tag);
+    if (tag !== "") return { kind: "tag", tag };
+  }
+  return { kind: "group", tag: "" };
+}
+
+/** 任务是否命中搜索词：正文与标签都算，大小写不敏感，空搜索词一律命中。 */
+export function matchTask(task, query) {
+  const needle = normalizeQuery(query).toLowerCase();
+  if (needle === "") return true;
+  if (String(task?.text ?? "").toLowerCase().includes(needle)) return true;
+  return taskTags(task).some((tag) => tag.toLowerCase().includes(needle));
+}
+
+/**
+ * 已知标签与各自的未完成数。
+ *
+ * 清单来自所有任务的标签（含任务已经全部完成的那种），这样某个标签的待办
+ * 全部做完之后，它的入口不会从侧栏消失；只有计数会归零。
+ */
+export function tagCounts(state) {
+  const counts = new Map();
+  for (const task of state.tasks ?? []) {
+    for (const tag of taskTags(task)) {
+      counts.set(tag, (counts.get(tag) ?? 0) + (task.done ? 0 : 1));
+    }
+  }
+  return counts;
+}
+
+/** 把正文切成高亮片段；搜索词按字面量处理，不解释正则元字符。 */
+export function highlight(text, query) {
+  const source = String(text ?? "");
+  const needle = normalizeQuery(query);
+  if (needle === "") return [{ text: source, hit: false }];
+
+  const haystack = source.toLowerCase();
+  const lowered = needle.toLowerCase();
+  const parts = [];
+  let from = 0;
+  let found = haystack.indexOf(lowered, from);
+
+  while (found >= 0) {
+    if (found > from) parts.push({ text: source.slice(from, found), hit: false });
+    parts.push({ text: source.slice(found, found + needle.length), hit: true });
+    from = found + needle.length;
+    found = haystack.indexOf(lowered, from);
+  }
+
+  if (parts.length === 0) return [{ text: source, hit: false }];
+  if (from < source.length) parts.push({ text: source.slice(from), hit: false });
+  return parts;
+}
+
+/** 已完成置底：在各分组内部把已完成挪到末尾，分组之间的先后次序不动。 */
+function completedToGroupTail(sorted) {
+  const out = [];
+  let index = 0;
+
+  while (index < sorted.length) {
+    const groupId = sorted[index].groupId;
+    const open = [];
+    const done = [];
+    while (index < sorted.length && sorted[index].groupId === groupId) {
+      (sorted[index].done ? done : open).push(sorted[index]);
+      index += 1;
+    }
+    out.push(...open, ...done);
+  }
+
+  return out;
+}
+
+/**
+ * 当前视图下可见的任务：先按视图与搜索词过滤，再按「分组顺序 → 组内顺序」
+ * 排序，每项带上所属分组名，供降平列表直接消费。
+ */
+export function visibleTasks(state, view, query) {
+  const settings = { ...DEFAULT_SETTINGS, ...(state.settings ?? {}) };
+  const resolved = view ?? resolveView(null);
+  const groups = sortGroups(state.groups ?? []);
+  const groupRank = new Map(groups.map((group, index) => [group.id, index]));
+  const groupName = new Map(groups.map((group) => [group.id, group.name]));
+  const needle = normalizeQuery(query);
+
+  let list = [...(state.tasks ?? [])];
+  if (settings.hideCompleted) list = list.filter((task) => !task.done);
+
+  if (resolved.kind === "untagged") {
+    list = list.filter((task) => taskTags(task).length === 0);
+  } else if (resolved.kind === "tag") {
+    list = list.filter((task) => taskTags(task).includes(resolved.tag));
+  }
+
+  if (needle !== "") list = list.filter((task) => matchTask(task, needle));
+
+  const sorted = list.sort((a, b) => {
+    const rank =
+      (groupRank.get(a.groupId) ?? groups.length) - (groupRank.get(b.groupId) ?? groups.length);
+    if (rank !== 0) return rank;
+    return compareTasks(a, b);
+  });
+
+  const ordered = settings.completedBottom ? completedToGroupTail(sorted) : sorted;
+  return ordered.map((task) => ({ task, groupName: groupName.get(task.groupId) ?? "" }));
+}
+
+/**
+ * 批量改名：把等于 from 的标签换成 to。替换后同一任务内的重复标签只留一个；
+ * 没有可改的内容时返回原数组的浅拷贝。改过的任务把 updatedAt 置为传入的
+ * 时间戳，没改动的任务原样返回。
+ */
+export function renameTagInTasks(tasks, from, to, timestamp) {
+  const source = normalizeTag(from);
+  const target = normalizeTag(to);
+  if (source === "" || target === "" || source === target) return [...(tasks ?? [])];
+
+  return (tasks ?? []).map((task) => {
+    const tags = taskTags(task);
+    if (!tags.includes(source)) return task;
+
+    const next = [];
+    for (const tag of tags) {
+      const name = tag === source ? target : tag;
+      if (!next.includes(name)) next.push(name);
+    }
+    return { ...task, tags: next, updatedAt: timestamp };
+  });
+}
+
+/** 批量移除：把所有等于 tag 的标签去掉。 */
+export function removeTagFromTasks(tasks, tag, timestamp) {
+  const name = normalizeTag(tag);
+  if (name === "") return [...(tasks ?? [])];
+
+  return (tasks ?? []).map((task) => {
+    const tags = taskTags(task);
+    if (!tags.includes(name)) return task;
+    return { ...task, tags: tags.filter((item) => item !== name), updatedAt: timestamp };
+  });
+}
+
+/** 扁平列表的标题。搜索时一律叫「搜索结果」。 */
+function flatTitleOf(view, query) {
+  if (query !== "") return "搜索结果";
+  if (view.kind === "all") return "全部待办";
+  if (view.kind === "untagged") return "无标签";
+  if (view.kind === "tag") return `标签「${view.tag}」`;
+  return "全部待办";
+}
+
 /** 组装渲染所需的全部结构，渲染层不再做任何判断。 */
 export function buildView(state, ui) {
   const settings = { ...DEFAULT_SETTINGS, ...(state.settings ?? {}) };
   const groups = sortGroups(state.groups ?? []);
   const counts = groupCounts(state);
+  const view = resolveView(ui);
+  const query = normalizeQuery(ui?.query);
 
   const activeGroup =
     groups.find((group) => group.id === ui.activeGroupId) ?? groups[0] ?? null;
@@ -104,6 +289,12 @@ export function buildView(state, ui) {
 
   const activeTasks = activeGroup ? tasksForGroup(state, activeGroup.id) : [];
 
+  // 搜索的作用域跟着视图走，展示形态却一律降平：只要在搜，或者视图本身
+  // 不是「分组」，右栏就走扁平列表。
+  const flat = query !== "" || view.kind !== "group";
+  const flatTasks = flat ? visibleTasks(state, view, query) : null;
+  const tagCountMap = tagCounts(state);
+
   return {
     layout: settings.layout,
     settings,
@@ -111,12 +302,29 @@ export function buildView(state, ui) {
     groups: groups.map((group) => ({
       group,
       count: counts.get(group.id) ?? 0,
-      active: activeGroup !== null && group.id === activeGroup.id,
+      active: view.kind === "group" && activeGroup !== null && group.id === activeGroup.id,
     })),
     activeGroup,
     activeTasks,
     sections,
     totalUnfinished: counts.size === 0 ? 0 : [...counts.values()].reduce((a, b) => a + b, 0),
+
+    view,
+    query,
+    flat,
+    flatTasks,
+    flatTitle: flatTitleOf(view, query),
+    tags: [...tagCountMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "zh-Hans-CN"))
+      .map(([tag, count]) => ({
+        tag,
+        count,
+        active: view.kind === "tag" && view.tag === tag,
+      })),
+    viewItems: [
+      { key: "all", label: "全部待办", active: view.kind === "all" },
+      { key: "untagged", label: "无标签", active: view.kind === "untagged" },
+    ],
   };
 }
 
