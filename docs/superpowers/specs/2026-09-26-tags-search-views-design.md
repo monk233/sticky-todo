@@ -3,6 +3,8 @@
 日期：2026-09-26
 状态：已与用户确认
 
+实现回写：标签输入行改用 `editorMemory` 保存输入（不再经过 `ui.tagDraft`），搜索改为 140ms 防抖加输入法组字门控。两处都是实现时为了保证中文输入不被整棵 DOM 重建打断而做的调整，正文已按实现更新。
+
 ## 1. 背景
 
 `sticky-todo` 目前只有「分组」一个组织维度。任务数量上去之后，两个场景无解：一是「我记得记过这件事，但想不起放在哪个分组」，二是「把同一件事的相关条目找齐」。本设计为任务增加标签字段，把搜索与标签筛选做成跨分组的视图，并把「分组」降为视图列表中的一项。
@@ -108,7 +110,7 @@ export function matchTask(task, query)
 /** 当前视图下的可见任务，已按「分组顺序 → 组内顺序」排好并带上分组名 */
 export function visibleTasks(state, view, query)
 
-/** 每个标签的未完成任务数，返回 Map<标签名, 数量> */
+/** 已知标签与各自的未完成数，返回 Map<标签名, 数量>；只有已完成任务的标签也在清单里 */
 export function tagCounts(state)
 
 /** 把正文切成片段供高亮渲染：[{ text, hit }]；query 为空时返回单个非命中片段 */
@@ -177,7 +179,7 @@ export function removeTagFromTasks(tasks, from, timestamp)
 - 分组徽章：只在降平展示时出现，标明任务归属的分组。
 - 命中高亮：搜索时正文与标签中命中的片段用 `<mark>` 包裹。
 - 标签按钮：任务行工具区新增一个标签按钮，点击在正文下方展开标签输入行；输入框内 `Enter` 添加一个标签并清空输入框、保持焦点，`Esc` 关闭输入行。文本编辑态（textarea 展开）时标签输入行同样显示在 textarea 下方。
-- 标签输入行的值来自 `ui.tagDraft`，因此整棵 DOM 重建之后内容与焦点都能复原。关闭输入行时把 `ui.tagDraft` 置空，未提交的内容随之丢弃。
+- 标签输入行的值与正文编辑器同样交给 `editorMemory` 保管：输入期间不重建 DOM，因此不会打断输入法的组字过程；提交或关闭时把输入框清空，未提交的内容随之丢弃。
 
 ### 5.4 右栏
 
@@ -208,7 +210,7 @@ export function removeTagFromTasks(tasks, from, timestamp)
 
 `↑` / `↓` 的任务光标循环改为按**当前视图的可见任务列表**进行（`visibleTasks` 的结果），不再按 `activeGroupId` 过滤。否则在搜索结果或标签视图里按方向键，光标会落到看不见的任务上。
 
-`Ctrl + N` 在降平视图下仍把新任务加进 `activeGroupId` 指向的分组；新任务带分组徽章出现在列表中，落点可见，因此不做额外提示。若当前没有分组，沿用现有逻辑自动建一个「待办」分组。
+`Ctrl + N` 在降平视图下仍把新任务加进 `activeGroupId` 指向的分组；新任务带分组徽章出现在列表中，落点可见，因此不做额外提示。在某个标签视图下新建的任务会默认带上该标签，否则它一出现就不在当前列表里。若当前没有分组，沿用现有逻辑自动建一个「待办」分组。
 
 ### 6.3 渲染全量重建与输入框焦点
 
@@ -217,17 +219,17 @@ export function removeTagFromTasks(tasks, from, timestamp)
 - 新增一份通用焦点记忆 `{ action, id, start, end }`，在 `beforeRender` 时从 `document.activeElement` 记录，在 `afterRender` 时按 `[data-action][data-id]` 找回并恢复选区。
 - 只处理搜索框（`data-action="search"`）与标签输入行（`data-action="tag-editor"`）两种。
 - 任务编辑器与分组名输入框沿用既有逻辑，不改动，避免回归。
-- 输入框的值不由焦点记忆承担：搜索框的值来自 `ui.query`，标签输入行的值来自 `ui.tagDraft`。这样重建后的内容与状态天然一致，添加标签后清空输入框也只需要把 `tagDraft` 置空。
+- 输入框的值不由焦点记忆承担：搜索框的值来自 `ui.query`，标签输入行与正文编辑器一样由 `editorMemory` 保存。重建之后内容与焦点都能复原。
 
 滚动位置的恢复沿用现有 `captureScroll` / `restoreScroll`，需要把新的滚动容器（侧栏视图区段）加入 `SCROLLABLE` 选择器。
 
 ### 6.4 输入法
 
-搜索框在中文输入法组字期间也会触发 `input` 事件，过滤会随未确定的文本跳动。先按现状接受，不加 `compositionend` 门控；若实际体验明显干扰，再单独处理。
+重建整棵 DOM 会打断输入法的组字过程，所以组字期间不排期过滤：从 `compositionstart` 到 `compositionend` 之间只等不动，组字结束后再排一次过滤。
 
 ### 6.5 性能
 
-搜索每键触发一次全量投影与重建。按当前数据规模（数百条）预期无感；若实测卡顿，再给 `query` 加一帧合并，不在本期实现。
+搜索输入先用 140ms 防抖，停止输入之后才触发一次全量投影与重建；配合组字门控，连续输入期间不会因为重建 DOM 而丢字或打断输入法。
 
 ## 7. 迁移与兼容
 
@@ -277,7 +279,7 @@ export function removeTagFromTasks(tasks, from, timestamp)
 | --- | --- |
 | `src/model.js` | 视图描述、筛选、计数、高亮、批量标签操作的纯函数；`buildView` 扩展；`createEmptyData` 版本号改为 2 |
 | `src/model.test.js` | 上述纯函数的用例 |
-| `src/store.js` | `ui` 新增 `view`、`query`、`tagDraft`、`tagEditorTaskId`、`editingTag`、`tagMenu`；新增 `setView`、`setQuery`、`setTagDraft`、`openTagEditor`、`closeTagEditor`、`addTag`、`removeTag`、`renameTag`、`deleteTag`、`openTagMenu`、`closeTagMenu`；`cycleTask` 改为按视图可见列表循环 |
+| `src/store.js` | `ui` 新增 `view`、`query`、`tagEditorTaskId`、`editingTag`、`tagMenu`；新增 `setView`、`setQuery`、`openTagEditor`、`closeTagEditor`、`addTag`、`removeTag`、`renameTag`、`deleteTag`、`startRenameTag`、`commitRenameTag`、`openTagMenu`、`closeTagMenu`、`confirmDeleteTag`；`cycleTask` 改为按视图可见列表循环 |
 | `src/render.js` | 侧栏改为视图列表（搜索框、固定视图、分组区段、标签区段）；新增扁平列表渲染；任务行加标签胶囊、分组徽章、标签按钮与标签输入行；新增标签右键菜单浮层；正文按 `highlight` 结果拼接节点，不用 `innerHTML` |
 | `src/events.js` | `contextmenu` 与 `input` 委托；新增 action 分支；`Ctrl + F`；搜索框与标签输入行的按键处理；通用焦点记忆；`SCROLLABLE` 增加侧栏视图容器 |
 | `src/icons.js` | 新增标签、搜索、全部、无标签四个图标 |
