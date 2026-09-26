@@ -1,0 +1,29 @@
+/* 点阵字体：方舟像素 12px（SIL OFL-1.1，全文见 fonts/OFL.txt）。
+ *
+ * 上游把全字库按语言拆成多个 woff2 分片，这里只带简体中文那一片，它本身就
+ * 含拉丁字形（每个分片都自带拉丁），所以中英文数字可以共用同一份文件。
+ *
+ * 12px 网格的点阵字只在整数倍字号下锐利，别处会被灰度缩放糊掉；使用它的
+ * 主题因此把字号限制在 12px 与 24px 两档（见 themes/minecraft*.css）。
+ *
+ * 这份字体没有真正的粗体：再声明一条 700 指向同一个文件，让浏览器直接复用，
+ * 而不是去合成假粗体 —— 点阵被合成加粗会糊成一团。
+ *
+ * 只有主题把 font-family 指到它时才会真正加载，其它主题不付这份开销。
+ */
+
+@font-face {
+  font-family: "ArkPixel12";
+  src: url("fonts/ark-pixel-12px-monospaced-zh_hans.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "ArkPixel12";
+  src: url("fonts/ark-pixel-12px-monospaced-zh_hans.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}

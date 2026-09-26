@@ -287,7 +287,14 @@ test("三个方块主题都走同一套像素方块语言", () => {
       id
     );
 
-    assert.ok(css.includes("Minecraft"), `${id}: 字体栈里没有像素字体`);
+    assert.ok(css.includes("ArkPixel12"), `${id}: 字体栈里没有点阵字体`);
+    for (const name of ["xs", "sm", "base", "md", "lg", "xl"]) {
+      const size = themeVariable(css, `--text-${name}`);
+      assert.ok(
+        size === "12px" || size === "24px",
+        `${id}: --text-${name} 是 ${size}，不在点阵网格上`
+      );
+    }
     assert.ok(/--radius-lg:\s*0/.test(css), `${id}: 圆角没有归零`);
     assert.ok(/--task-shadow:\s*inset/.test(css), `${id}: 任务行缺浮雕内阴影`);
     assert.ok(css.includes("repeating-linear-gradient"), `${id}: 缺像素纹理`);

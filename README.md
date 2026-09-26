@@ -33,7 +33,7 @@
 
 任务行里直接显示创建时间与更新时间；带图片的待办会在文字下方显示缩略图。
 
-「方块世界」「石木村庄」「下界岩浆」这三套共用同一套像素语言：圆角全部归零，任务行用两色内阴影做出按钮浮雕，背景压一层像素纹理。字体优先使用系统里已经装好的像素字体（`Minecraft`、`Minecraftia`、`Pixelify Sans` 等），没装就回退到等宽字体，不下载也不打包任何字体文件。
+「方块世界」「石木村庄」「下界岩浆」这三套共用同一套像素语言：圆角全部归零，任务行用两色内阴影做出按钮浮雕，背景压一层像素纹理，文字用内置的点阵字体「方舟像素 12px」（简体中文分片，自带拉丁字形）。点阵字体只在整数倍字号下锐利，所以这三套把字号限制在 12px 与 24px 两档。字体文件与许可见 [`src/fonts/`](src/fonts/)：方舟像素由 TakWolf 以 SIL Open Font License 1.1 发布，允许随程序分发，版权声明与许可全文随字体一起放在仓库里。
 
 主题是数据而不是代码：程序启动时会把十套内置主题补齐到数据目录的 `themes/` 目录（只补缺的，已经存在的一律不覆盖），你也可以照同样的格式放自己的 CSS，界面里点「重新加载主题」就能用上，不需要改程序，也不需要重新构建。
 
@@ -104,11 +104,12 @@ cargo build --release
 
 `Cargo.toml` 里把 `custom-protocol` 设成了默认 feature，这一步不能省：Tauri 用它区分「加载嵌入二进制的前端资源」和「连接 devUrl 的开发服务器」。漏掉它构建出的 exe 会一直去连 `http://localhost:1420`，界面是空白的。
 
-产物为 `src-tauri/target/release/sticky-todo.exe`，本机实测 3,572,224 字节（约 3.41 MB）。
+产物为 `src-tauri/target/release/sticky-todo.exe`，本机实测 4,118,528 字节（约 3.93 MB）。
 
 ### 关于体积
 
-- release 产物 3.41 MB，运行只依赖系统自带的 WebView2 运行时，不需要额外安装。
+- release 产物 3.93 MB，运行只依赖系统自带的 WebView2 运行时，不需要额外安装。
+- 其中 539 KB 是内置的点阵字体（方舟像素 12px 简体中文分片），只在「方块世界」那三套主题里被引用，其它主题不会加载它。
 - 未开启 `bundle`，只产出单个 exe；需要安装包时可另行配置 Tauri 的 NSIS 目标。
 - WebView2 运行时由 Windows 11 内置提供，不随产物分发。
 - `src-tauri/Cargo.toml` 的 release 配置为 `opt-level = "s"`、`lto = true`、`strip = true`、`panic = "abort"`、`codegen-units = 1`。

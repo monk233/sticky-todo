@@ -24,9 +24,17 @@
   --warn: #8a6414;
   --scrim: rgba(44, 33, 20, 0.5);
 
-  --font-body: "Minecraft", "Minecraftia", "Pixelify Sans", "Silkscreen", "Fusion Pixel 12px monospaced", ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --font-display: "Minecraft", "Minecraftia", "Pixelify Sans", "Silkscreen", "Fusion Pixel 12px monospaced", ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  /* 点阵字体是 12px 网格，字号只能落在 12 / 24 上，否则会糊（见 fonts.css）。 */
+  --font-body: "ArkPixel12", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-display: "ArkPixel12", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-mono: "ArkPixel12", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 12px;
+  --text-base: 12px;
+  --text-md: 12px;
+  --text-lg: 24px;
+  --text-xl: 24px;
 
   --radius-sm: 0;
   --radius-md: 0;
