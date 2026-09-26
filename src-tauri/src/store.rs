@@ -34,6 +34,9 @@ fn default_hotkey() -> String {
 pub struct Settings {
     pub layout: String,
     pub theme: String,
+    /// 主题标识，取值来自前端 `theme.js` 里的清单。少了这个字段，Serde 会在
+    /// 写回时把前端传上来的 `themeName` 丢掉，界面每次启动都退回默认主题。
+    pub theme_name: String,
     pub always_on_top: bool,
     pub close_to_tray: bool,
     pub hide_completed: bool,
@@ -50,6 +53,7 @@ impl Default for Settings {
         Self {
             layout: default_layout(),
             theme: default_theme(),
+            theme_name: "default".to_string(),
             always_on_top: true,
             close_to_tray: true,
             hide_completed: false,
@@ -451,6 +455,24 @@ mod tests {
         let raw = fs::read_to_string(store.data_path()).unwrap();
         assert!(raw.contains("futureThing"));
         assert!(raw.contains("\"a\""));
+    }
+
+    #[test]
+    fn theme_name_survives_a_round_trip() {
+        let (_dir, store) = store();
+        fs::create_dir_all(store.dir()).unwrap();
+        fs::write(
+            store.data_path(),
+            br#"{"version":1,"settings":{"themeName":"minecraft"},"groups":[],"tasks":[]}"#,
+        )
+        .unwrap();
+
+        let data = store.load().unwrap().data;
+        store.save(&data).unwrap();
+
+        let raw = fs::read_to_string(store.data_path()).unwrap();
+        assert!(raw.contains("\"themeName\""), "主题名没能活过一轮读写：{raw}");
+        assert!(raw.contains("minecraft"), "主题名的值丢了：{raw}");
     }
 
     #[test]
