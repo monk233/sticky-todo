@@ -104,11 +104,11 @@ cargo build --release
 
 `Cargo.toml` 里把 `custom-protocol` 设成了默认 feature，这一步不能省：Tauri 用它区分「加载嵌入二进制的前端资源」和「连接 devUrl 的开发服务器」。漏掉它构建出的 exe 会一直去连 `http://localhost:1420`，界面是空白的。
 
-产物为 `src-tauri/target/release/sticky-todo.exe`，本机实测 3,561,472 字节（约 3.40 MB）。
+产物为 `src-tauri/target/release/sticky-todo.exe`，本机实测 3,572,224 字节（约 3.41 MB）。
 
 ### 关于体积
 
-- release 产物 3.40 MB，运行只依赖系统自带的 WebView2 运行时，不需要额外安装。
+- release 产物 3.41 MB，运行只依赖系统自带的 WebView2 运行时，不需要额外安装。
 - 未开启 `bundle`，只产出单个 exe；需要安装包时可另行配置 Tauri 的 NSIS 目标。
 - WebView2 运行时由 Windows 11 内置提供，不随产物分发。
 - `src-tauri/Cargo.toml` 的 release 配置为 `opt-level = "s"`、`lto = true`、`strip = true`、`panic = "abort"`、`codegen-units = 1`。
