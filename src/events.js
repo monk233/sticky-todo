@@ -186,6 +186,9 @@ export function createInteraction({ host, store, invoke }) {
     const target = event.target.closest("[data-action]");
     if (!target || !host.contains(target)) return;
 
+    const { action } = target.dataset;
+    const id = target.dataset.id;
+
     flushEditing(target);
 
     // 标签菜单是浮层，点到别处就收起来；这次点击的其它含义照常处理。
@@ -193,10 +196,18 @@ export function createInteraction({ host, store, invoke }) {
       store.closeTagMenu();
     }
 
-    if (detectTaskDoubleClick(target)) return;
+    // 提交会重建 DOM，把这次点击命中的节点换掉。搜索框与标签输入行是靠浏览器
+    // 默认行为拿焦点的，必须在重建后的新节点上再接一次，否则这一下就白点了。
+    if (action === "search") {
+      focusSearch();
+      return;
+    }
+    if (action === "tag-editor") {
+      resumeTagEditor(id);
+      return;
+    }
 
-    const { action } = target.dataset;
-    const id = target.dataset.id;
+    if (detectTaskDoubleClick(target)) return;
 
     switch (action) {
       case "settings-panel":
@@ -351,11 +362,32 @@ export function createInteraction({ host, store, invoke }) {
     }
   }
 
-  function focusSearch() {
+  function focusSearch({ select = false } = {}) {
     const input = host.querySelector('[data-action="search"]');
     if (!input) return;
     input.focus({ preventScroll: true });
-    input.select();
+
+    const end = input.value.length;
+    if (select) input.select();
+    else input.setSelectionRange(end, end);
+  }
+
+  /**
+   * 点击标签输入行时用它接回焦点。
+   *
+   * 这次点击会先让 flushEditing 把正文存掉，而提交要重建整棵 DOM，点击的那个
+   * 节点随之被换掉；不重新打开并聚焦新节点的话，输入行会连人带框一起消失。
+   */
+  function resumeTagEditor(taskId) {
+    if (!taskId) return;
+
+    store.openTagEditor(taskId);
+    const input = host.querySelector(`[data-action="tag-editor"][data-id="${taskId}"]`);
+    if (!input) return;
+
+    input.focus({ preventScroll: true });
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
   }
 
   /**
@@ -411,6 +443,12 @@ export function createInteraction({ host, store, invoke }) {
    * 这里只认「同一行、间隔够短」，与节点有没有被重建无关。
    */
   function detectTaskDoubleClick(target) {
+    // 输入框和按钮上的点击各有各的动作，不该被当成「双击这一行」。
+    if (target.closest("input, textarea, button")) {
+      lastTaskClick = { id: null, at: Date.now() };
+      return false;
+    }
+
     const row = target.closest(".task");
     const rowId = row && row.dataset.id ? row.dataset.id : null;
     const now = Date.now();
@@ -443,6 +481,13 @@ export function createInteraction({ host, store, invoke }) {
       const accelerator = acceleratorFrom(event);
       if (accelerator === null) return;
       void store.applyRecordedHotkey(accelerator);
+      return;
+    }
+
+    // 搜索放在输入框判定之前：在正文编辑态里也该能一键跳到搜索。
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      focusSearch({ select: true });
       return;
     }
 
@@ -535,12 +580,6 @@ export function createInteraction({ host, store, invoke }) {
         event.preventDefault();
         store.patchUi({ previewImage: null });
       }
-      return;
-    }
-
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
-      event.preventDefault();
-      focusSearch();
       return;
     }
 
@@ -642,6 +681,12 @@ export function createInteraction({ host, store, invoke }) {
       const value = target.value;
       setTimeout(() => {
         if (store.getUi().tagEditorTaskId !== id) return;
+
+        // 重建会先让旧节点失焦，再把焦点交给新节点。焦点已经在新输入框上，
+        // 就说明这次不是用户离开，输入行不该跟着关掉。
+        const live = host.querySelector(`[data-action="tag-editor"][data-id="${id}"]`);
+        if (live && document.activeElement === live) return;
+
         if (value.trim() !== "") store.addTag(id, value);
         store.closeTagEditor();
       }, 0);
