@@ -407,6 +407,18 @@ fn list_user_themes(state: State<'_, AppState>) -> Result<Vec<themes::ThemeFile>
     themes::load_user_themes(&dir).map_err(|e| format!("读取主题目录失败：{e}"))
 }
 
+/// 把内置主题里数据目录还没有的那些写过去，让主题不必重新构建就能改。
+///
+/// 已存在的文件不会被动，用户改过的版本优先。
+#[tauri::command]
+fn seed_builtin_themes(
+    state: State<'_, AppState>,
+    themes: Vec<themes::ThemeSeed>,
+) -> Result<Vec<String>, String> {
+    let dir = current_data_dir(&state).join("themes");
+    themes::seed_builtin_themes(&dir, &themes).map_err(|e| format!("预置内置主题失败：{e}"))
+}
+
 #[tauri::command]
 async fn pick_directory(app: AppHandle) -> Result<Option<String>, String> {
     let (sender, receiver) = std::sync::mpsc::channel();
@@ -549,6 +561,7 @@ pub fn run() {
             open_data_dir,
             open_themes_dir,
             list_user_themes,
+            seed_builtin_themes,
             pick_directory,
             pick_image,
             get_autostart,

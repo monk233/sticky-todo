@@ -5,9 +5,10 @@
 //! （过滤在前端做，那里才有 CSSOM）。
 
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +103,66 @@ pub fn load_user_themes(dir: &Path) -> Result<Vec<ThemeFile>, std::io::Error> {
 
     entries.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(entries)
+}
+
+/// 预置内置主题时前端传来的一项：目标文件名与文件原文。
+///
+/// 传原文而不是解析后的变量块，是为了让写出的文件里保留 `@name` 注释，
+/// 下次读取时显示名才不会退化成文件名。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeSeed {
+    pub file_name: String,
+    pub css: String,
+}
+
+/// 主题文件名的白名单：单层文件名、`.css` 结尾、不含路径分隔符、不以点开头。
+///
+/// 文件名来自前端，`..\` 这类名字必须在落盘之前挡住。
+pub fn is_safe_theme_file_name(file_name: &str) -> bool {
+    if file_name.is_empty() || file_name.starts_with('.') {
+        return false;
+    }
+    if !file_name.to_ascii_lowercase().ends_with(".css") {
+        return false;
+    }
+    file_name
+        .chars()
+        .all(|ch| ch.is_alphanumeric() || ch == '-' || ch == '_' || ch == '.')
+}
+
+/// 把内置主题预置进主题目录：只写缺失的文件，已存在的一律不碰。
+///
+/// 数据目录里同名的那份是用户能直接编辑的版本，比内置的新旧更该被保留，
+/// 所以这里用 `create_new` 拿写入权，已存在就跳过。返回真正写下的文件名。
+pub fn seed_builtin_themes(dir: &Path, seeds: &[ThemeSeed]) -> Result<Vec<String>, std::io::Error> {
+    if seeds.is_empty() {
+        return Ok(Vec::new());
+    }
+    fs::create_dir_all(dir)?;
+
+    let mut written = Vec::new();
+    for seed in seeds {
+        if !is_safe_theme_file_name(&seed.file_name) {
+            continue;
+        }
+
+        let path = dir.join(&seed.file_name);
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                file.write_all(seed.css.as_bytes())?;
+                written.push(seed.file_name.clone());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+
+    Ok(written)
 }
 
 #[cfg(test)]
@@ -207,5 +268,121 @@ mod tests {
 
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].id, "Paper");
+    }
+
+    #[test]
+    fn seeds_write_missing_files_and_report_them() {
+        let dir = tempdir().unwrap();
+        let themes = dir.path().join("themes");
+
+        let written = seed_builtin_themes(
+            &themes,
+            &[
+                ThemeSeed {
+                    file_name: "paper.css".to_string(),
+                    css: "/* @name 纸本便签 */\n:root[data-theme=\"paper\"] { --bg: #fff; }"
+                        .to_string(),
+                },
+                ThemeSeed {
+                    file_name: "terminal.css".to_string(),
+                    css: ":root[data-theme=\"terminal\"] { --bg: #000; }".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(written, vec!["paper.css", "terminal.css"]);
+        assert!(fs::read_to_string(themes.join("paper.css"))
+            .unwrap()
+            .contains("@name 纸本便签"));
+    }
+
+    #[test]
+    fn seeds_keep_the_copy_the_user_already_has() {
+        let dir = tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        fs::create_dir_all(&themes).unwrap();
+        fs::write(themes.join("paper.css"), "/* 我自己改过的 */").unwrap();
+
+        let written = seed_builtin_themes(
+            &themes,
+            &[ThemeSeed {
+                file_name: "paper.css".to_string(),
+                css: "/* @name 纸本便签 */".to_string(),
+            }],
+        )
+        .unwrap();
+
+        assert!(written.is_empty());
+        assert_eq!(
+            fs::read_to_string(themes.join("paper.css")).unwrap(),
+            "/* 我自己改过的 */"
+        );
+    }
+
+    #[test]
+    fn seeds_refuse_names_that_would_escape_the_directory() {
+        let dir = tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        fs::create_dir_all(&themes).unwrap();
+
+        let written = seed_builtin_themes(
+            &themes,
+            &[
+                ThemeSeed {
+                    file_name: "../escape.css".to_string(),
+                    css: "x".to_string(),
+                },
+                ThemeSeed {
+                    file_name: "..\\escape.css".to_string(),
+                    css: "x".to_string(),
+                },
+                ThemeSeed {
+                    file_name: "notes.txt".to_string(),
+                    css: "x".to_string(),
+                },
+                ThemeSeed {
+                    file_name: ".hidden.css".to_string(),
+                    css: "x".to_string(),
+                },
+                ThemeSeed {
+                    file_name: String::new(),
+                    css: "x".to_string(),
+                },
+            ],
+        )
+        .unwrap();
+
+        assert!(written.is_empty());
+        assert!(!dir.path().join("escape.css").exists());
+        assert!(!themes.join("notes.txt").exists());
+    }
+
+    #[test]
+    fn seeds_accept_unicode_file_names() {
+        let dir = tempdir().unwrap();
+        let themes = dir.path().join("themes");
+
+        let written = seed_builtin_themes(
+            &themes,
+            &[ThemeSeed {
+                file_name: "纸本便签.css".to_string(),
+                css: "x".to_string(),
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(written, vec!["纸本便签.css"]);
+    }
+
+    #[test]
+    fn seeding_nothing_does_not_create_the_directory() {
+        let dir = tempdir().unwrap();
+        let themes = dir.path().join("themes");
+
+        let written = seed_builtin_themes(&themes, &[]).unwrap();
+
+        assert!(written.is_empty());
+        assert!(!themes.exists());
     }
 }

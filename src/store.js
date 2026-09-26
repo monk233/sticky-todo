@@ -8,6 +8,7 @@ import {
   DEFAULT_THEME_ID,
   loadBuiltinThemes,
   mergeThemes,
+  missingThemeSeeds,
   normalizeUserThemes,
   resolveThemeId,
 } from "./theme.js";
@@ -206,6 +207,19 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
       user = normalizeUserThemes(await invoke("list_user_themes"));
     } catch (error) {
       onError(`读取自定义主题失败：${String(error)}`);
+    }
+
+    // 内置主题里数据目录还没有的那些先落一份过去。之后改主题只要改数据目录
+    // 里的文件再点「重新加载主题」，不必重新构建程序；已经存在的那份是用户
+    // 自己编辑过的版本，后端只补缺失的，不会覆盖。
+    const seeds = missingThemeSeeds(builtin, user);
+    if (seeds.length > 0) {
+      try {
+        await invoke("seed_builtin_themes", { themes: seeds });
+        user = normalizeUserThemes(await invoke("list_user_themes"));
+      } catch (error) {
+        onError(`预置内置主题失败：${String(error)}`);
+      }
     }
 
     ui.themes = mergeThemes(builtin, user);

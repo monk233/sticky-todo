@@ -94,13 +94,25 @@ export function themeVariable(css, name) {
   return match ? match[1].trim() : "";
 }
 
-/** 拉取内置主题文件；读不到就跳过，不让一个缺失的文件挡住启动。 */
+/**
+ * 拉取内置主题文件；读不到就跳过，不让一个缺失的文件挡住启动。
+ *
+ * 除了过滤后的变量块，还留下文件原文（`raw`）：把它写进数据目录时得保留
+ * `@name` 注释，否则那份副本的显示名会退化成文件名。
+ */
 export async function loadBuiltinThemes(fetchText) {
   const themes = [];
 
   for (const entry of BUILTIN_THEMES) {
     if (!entry.file) {
-      themes.push({ id: entry.id, name: entry.name, source: "builtin", css: "" });
+      themes.push({
+        id: entry.id,
+        name: entry.name,
+        source: "builtin",
+        css: "",
+        raw: "",
+        file: null,
+      });
       continue;
     }
     try {
@@ -110,9 +122,18 @@ export async function loadBuiltinThemes(fetchText) {
         name: themeNameFromCss(raw, entry.name),
         source: "builtin",
         css: extractThemeCss(raw, entry.id),
+        raw,
+        file: entry.file,
       });
     } catch (error) {
-      themes.push({ id: entry.id, name: entry.name, source: "builtin", css: "" });
+      themes.push({
+        id: entry.id,
+        name: entry.name,
+        source: "builtin",
+        css: "",
+        raw: "",
+        file: null,
+      });
     }
   }
 
@@ -130,6 +151,36 @@ export function normalizeUserThemes(rows) {
       css: extractThemeCss(row.css, row.id),
       file: row.file ?? "",
     }));
+}
+
+/** 主题文件的文件名：`themes/minecraft.css` -> `minecraft.css`。 */
+export function themeFileName(file) {
+  const parts = String(file ?? "").split("/");
+  return parts[parts.length - 1] ?? "";
+}
+
+/**
+ * 内置主题里数据目录还没有的那些，用来预置。
+ *
+ * 判断只看 id：数据目录里已经有同名主题，说明那份是用户能直接编辑的版本，
+ * 不该用内置的覆盖回去。`default` 没有文件（它靠 style.css 的默认值），
+ * 因此永远不参与预置。
+ */
+export function missingThemeSeeds(builtin, user) {
+  const known = new Set((user ?? []).map((theme) => theme.id));
+  const seeds = [];
+
+  for (const theme of builtin ?? []) {
+    if (!theme.file || !theme.raw) continue;
+    if (known.has(theme.id)) continue;
+
+    const fileName = themeFileName(theme.file);
+    if (fileName === "") continue;
+
+    seeds.push({ fileName, css: theme.raw });
+  }
+
+  return seeds;
 }
 
 /** 同名时自定义主题覆盖内置主题。 */

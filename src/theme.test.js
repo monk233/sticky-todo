@@ -8,7 +8,9 @@ import {
   createThemeController,
   extractThemeCss,
   findTheme,
+  loadBuiltinThemes,
   mergeThemes,
+  missingThemeSeeds,
   normalizeMode,
   normalizeUserThemes,
   resolveAppearance,
@@ -136,6 +138,49 @@ test("mergeThemes 让自定义主题覆盖同名内置主题", () => {
   assert.equal(findTheme(merged, "paper").name, "我的纸");
   assert.equal(findTheme(merged, "paper").source, "user");
   assert.equal(merged[0].source, "builtin");
+});
+
+test("missingThemeSeeds 只挑数据目录里还没有的、读得到的主题", () => {
+  const builtin = [
+    { id: "default", name: "默认", file: null, raw: "" },
+    { id: "paper", name: "纸本便签", file: "themes/paper.css", raw: "/* @name 纸本便签 */" },
+    { id: "terminal", name: "等宽终端", file: "themes/terminal.css", raw: "/* @name 等宽终端 */" },
+    { id: "broken", name: "读不到", file: "themes/broken.css", raw: "" },
+  ];
+  const user = [{ id: "terminal", file: "D:\\记录\\todo\\themes\\terminal.css" }];
+
+  const seeds = missingThemeSeeds(builtin, user);
+
+  assert.equal(seeds.length, 1);
+  assert.equal(seeds[0].fileName, "paper.css");
+  assert.equal(seeds[0].css, "/* @name 纸本便签 */");
+});
+
+test("missingThemeSeeds 在都没有缺失时返回空数组", () => {
+  assert.deepEqual(missingThemeSeeds([{ id: "default", file: null, raw: "" }], []), []);
+  assert.deepEqual(missingThemeSeeds([], [{ id: "paper" }]), []);
+  assert.deepEqual(
+    missingThemeSeeds([{ id: "paper", file: "themes/paper.css", raw: "x" }], [{ id: "paper" }]),
+    []
+  );
+});
+
+test("loadBuiltinThemes 留下原文，预置种子按内置清单生成", async () => {
+  const rawCss = '/* @name 纸本便签 */\n:root[data-theme="paper"] { --bg: #fff; }';
+  const files = new Map([["themes/paper.css", rawCss]]);
+  const fetchText = async (path) => {
+    if (!files.has(path)) throw new Error("HTTP 404");
+    return files.get(path);
+  };
+
+  const themes = await loadBuiltinThemes(fetchText);
+  const paper = themes.find((theme) => theme.id === "paper");
+
+  assert.equal(paper.raw, rawCss);
+  assert.equal(paper.css, ':root[data-theme="paper"] { --bg: #fff; }');
+
+  // 只有读得到的内置主题才会被预置，读不到的那几套跳过。
+  assert.deepEqual(missingThemeSeeds(themes, []), [{ fileName: "paper.css", css: rawCss }]);
 });
 
 test("resolveThemeId 在缺失时回退到默认主题", () => {
