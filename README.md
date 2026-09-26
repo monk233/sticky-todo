@@ -116,7 +116,7 @@ cargo build --release
 
 `Cargo.toml` 里把 `custom-protocol` 设成了默认 feature，这一步不能省：Tauri 用它区分「加载嵌入二进制的前端资源」和「连接 devUrl 的开发服务器」。漏掉它构建出的 exe 会一直去连 `http://localhost:1420`，界面是空白的。
 
-产物为 `src-tauri/target/release/sticky-todo.exe`，本机实测 4,132,864 字节（约 3.94 MB）。
+产物为 `src-tauri/target/release/sticky-todo.exe`，本机实测 4,133,376 字节（约 3.94 MB）。
 
 ### 关于体积
 
