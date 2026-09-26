@@ -244,7 +244,7 @@ impl DataStore {
             source,
         })?;
 
-        let data: DataFile =
+        let mut data: DataFile =
             serde_json::from_slice(&raw).map_err(|e| StoreError::Corrupt {
                 path: path.clone(),
                 message: e.to_string(),
@@ -257,11 +257,14 @@ impl DataStore {
             });
         }
 
+        // 旧文件在读取时就升到当前版本：只补字段不升版本号的话，文件会被
+        // 一直写回旧版本，旧程序照旧能打开它，并静默丢掉不认识的字段。
         if data.version < CURRENT_VERSION {
             warnings.push(format!(
-                "数据文件版本为 {}，已按版本 {} 读取。",
+                "数据文件版本为 {}，已按版本 {} 读取并升级。",
                 data.version, CURRENT_VERSION
             ));
+            data.version = CURRENT_VERSION;
         }
 
         Ok(LoadOutcome {
@@ -500,6 +503,33 @@ mod tests {
         assert!(raw.contains("\"tags\""), "标签字段没有写回文件：{raw}");
         assert!(raw.contains("筛选"), "标签内容丢了：{raw}");
         assert!(raw.contains("评审"), "标签内容丢了：{raw}");
+    }
+
+    #[test]
+    fn old_version_file_is_upgraded_on_load() {
+        let (_dir, store) = store();
+        fs::create_dir_all(store.dir()).unwrap();
+        fs::write(
+            store.data_path(),
+            br#"{"version":1,"groups":[],"tasks":[{"id":"t1","tags":["\u7b5b\u9009"]}]}"#,
+        )
+        .unwrap();
+
+        let outcome = store.load().unwrap();
+        assert_eq!(outcome.data.version, CURRENT_VERSION);
+        assert_eq!(outcome.data.tasks[0].tags, vec!["筛选".to_string()]);
+        assert!(
+            outcome.warnings.iter().any(|line| line.contains("升级")),
+            "升级这件事得告诉用户：{:?}",
+            outcome.warnings
+        );
+
+        store.save(&outcome.data).unwrap();
+        let raw = fs::read_to_string(store.data_path()).unwrap();
+        assert!(
+            raw.contains(&format!("\"version\": {CURRENT_VERSION}")),
+            "升级后的版本号没有写回文件：{raw}"
+        );
     }
 
     #[test]
