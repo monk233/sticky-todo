@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// 当前支持的数据文件版本。
-pub const CURRENT_VERSION: u32 = 1;
+///
+/// 版本 2 起任务带 `tags` 字段。加字段本身向后兼容，但旧版本程序读到版本 2 的
+/// 文件会拒绝写入，而不是把不认识的字段悄悄丢掉，所以这里必须跟着升。
+pub const CURRENT_VERSION: u32 = 2;
 
 fn default_version() -> u32 {
     CURRENT_VERSION
@@ -104,6 +107,8 @@ pub struct Task {
     pub updated_at: String,
     #[serde(default)]
     pub images: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -372,6 +377,7 @@ mod tests {
             created_at: "2026-09-23T14:04:00.000Z".to_string(),
             updated_at: "2026-09-23T14:04:00.000Z".to_string(),
             images: vec!["attachments/abc.png".to_string()],
+            tags: vec!["筛选".to_string(), "评审".to_string()],
         });
         store.save(&data).unwrap();
 
@@ -473,6 +479,43 @@ mod tests {
         let raw = fs::read_to_string(store.data_path()).unwrap();
         assert!(raw.contains("\"themeName\""), "主题名没能活过一轮读写：{raw}");
         assert!(raw.contains("minecraft"), "主题名的值丢了：{raw}");
+    }
+
+    #[test]
+    fn tags_survive_a_round_trip() {
+        let (_dir, store) = store();
+        fs::create_dir_all(store.dir()).unwrap();
+        fs::write(
+            store.data_path(),
+            br#"{"version":2,"groups":[],"tasks":[{"id":"t1","tags":["\u7b5b\u9009","\u8bc4\u5ba1"]}]}"#,
+        )
+        .unwrap();
+
+        let data = store.load().unwrap().data;
+        assert_eq!(data.tasks[0].tags, vec!["筛选".to_string(), "评审".to_string()]);
+
+        store.save(&data).unwrap();
+
+        let raw = fs::read_to_string(store.data_path()).unwrap();
+        assert!(raw.contains("\"tags\""), "标签字段没有写回文件：{raw}");
+        assert!(raw.contains("筛选"), "标签内容丢了：{raw}");
+        assert!(raw.contains("评审"), "标签内容丢了：{raw}");
+    }
+
+    #[test]
+    fn missing_tags_reads_as_empty_list() {
+        let (_dir, store) = store();
+        fs::create_dir_all(store.dir()).unwrap();
+        fs::write(
+            store.data_path(),
+            br#"{"version":1,"groups":[],"tasks":[{"id":"t1","text":"\u65e7\u6570\u636e"}]}"#,
+        )
+        .unwrap();
+
+        let data = store.load().unwrap().data;
+        assert!(data.tasks[0].tags.is_empty());
+
+        store.save(&data).unwrap();
     }
 
     #[test]
