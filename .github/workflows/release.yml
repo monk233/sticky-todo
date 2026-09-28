@@ -20,6 +20,10 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          # 生成「本次更新」要拿上一个 tag 并列出区间提交，浅克隆里两者都没有。
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: 安装 Rust 工具链
         uses: dtolnay/rust-toolchain@stable
@@ -69,7 +73,7 @@ jobs:
           }
           $commits = git log --pretty=format:"- %s" "$previous..$tag" | Out-String
           if ([string]::IsNullOrWhiteSpace($commits)) {
-            $commits = "- 这个版本没有新的提交"
+            $commits = "- 检出时没拿到提交历史，这次没能列出改动"
           }
 
           $lines = @(
