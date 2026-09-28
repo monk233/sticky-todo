@@ -1449,6 +1449,42 @@ mark.hit {
   color: var(--text-soft);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.due-badge:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* 没有到期时间时的常显入口：淡，但看得见 */
+.due-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.due-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.due-add__icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.8;
 }
 
 .due-badge__icon {
