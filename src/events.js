@@ -12,7 +12,7 @@ const DOUBLE_CLICK_MS = 400;
 const SEARCH_DELAY_MS = 140;
 
 /** 值由状态提供、只需要在重建后找回焦点与光标的输入框。 */
-const FOCUS_ACTIONS = new Set(["search", "tag-editor"]);
+const FOCUS_ACTIONS = new Set(["search"]);
 
 function extensionOf(file) {
   const name = typeof file.name === "string" ? file.name : "";
@@ -173,13 +173,6 @@ export function createInteraction({ host, store, invoke }) {
         store.renameGroup(input.dataset.id, input.value);
       }
     }
-
-    if (ui.editingTag) {
-      const input = host.querySelector(".tag-item__editor");
-      if (input && !input.contains(target)) {
-        store.commitRenameTag(input.dataset.tag, input.value);
-      }
-    }
   }
 
   function handleClick(event) {
@@ -187,36 +180,25 @@ export function createInteraction({ host, store, invoke }) {
     if (!target || !host.contains(target)) return;
 
     const { action } = target.dataset;
-    const id = target.dataset.id;
 
     flushEditing(target);
 
-    // 标签菜单是浮层，点到别处就收起来；这次点击的其它含义照常处理。
-    if (store.getUi().tagMenu && !target.closest(".tag-menu")) {
-      store.closeTagMenu();
-    }
-
-    // 提交会重建 DOM，把这次点击命中的节点换掉。搜索框与标签输入行是靠浏览器
-    // 默认行为拿焦点的，必须在重建后的新节点上再接一次，否则这一下就白点了。
+    // 提交会重建 DOM，把这次点击命中的节点换掉。搜索框是靠浏览器默认行为拿
+    // 焦点的，必须在重建后的新节点上再接一次，否则这一下就白点了。
     if (action === "search") {
       focusSearch();
       return;
     }
-    if (action === "tag-editor") {
-      resumeTagEditor(id);
-      return;
-    }
 
     if (detectTaskDoubleClick(target)) return;
+
+    const id = target.dataset.id;
 
     switch (action) {
       case "settings-panel":
       case "editor":
       case "group-editor":
       case "search":
-      case "tag-editor":
-      case "tag-rename-editor":
-      case "tag-menu":
         return;
 
       case "settings-backdrop":
@@ -257,26 +239,6 @@ export function createInteraction({ host, store, invoke }) {
 
       case "select-view":
         store.setView({ kind: target.dataset.kind });
-        return;
-
-      case "select-tag":
-        store.setView({ kind: "tag", tag: target.dataset.tag });
-        return;
-
-      case "add-tag":
-        store.openTagEditor(id);
-        return;
-
-      case "remove-tag":
-        store.removeTag(id, target.dataset.tag);
-        return;
-
-      case "tag-menu-rename":
-        store.startRenameTag(target.dataset.tag);
-        return;
-
-      case "tag-menu-delete":
-        store.confirmDeleteTag();
         return;
 
       case "add-task":
@@ -373,24 +335,6 @@ export function createInteraction({ host, store, invoke }) {
   }
 
   /**
-   * 点击标签输入行时用它接回焦点。
-   *
-   * 这次点击会先让 flushEditing 把正文存掉，而提交要重建整棵 DOM，点击的那个
-   * 节点随之被换掉；不重新打开并聚焦新节点的话，输入行会连人带框一起消失。
-   */
-  function resumeTagEditor(taskId) {
-    if (!taskId) return;
-
-    store.openTagEditor(taskId);
-    const input = host.querySelector(`[data-action="tag-editor"][data-id="${taskId}"]`);
-    if (!input) return;
-
-    input.focus({ preventScroll: true });
-    const end = input.value.length;
-    input.setSelectionRange(end, end);
-  }
-
-  /**
    * 搜索框等手停一下再过滤。
    *
    * 每敲一下就重建整棵 DOM 会把光标搅乱，也会打断输入法的组字过程，所以
@@ -420,18 +364,6 @@ export function createInteraction({ host, store, invoke }) {
     if (event.target?.dataset?.action !== "search") return;
     searchComposing = false;
     scheduleSearch(event.target.value);
-  }
-
-  /** 标签项的右键菜单：点在别处就收起来。 */
-  function handleContextMenu(event) {
-    const item = event.target.closest("[data-action='select-tag']");
-    if (!item || !host.contains(item)) {
-      if (store.getUi().tagMenu) store.closeTagMenu();
-      return;
-    }
-
-    event.preventDefault();
-    store.openTagMenu(item.dataset.tag, event.clientX, event.clientY);
   }
 
   /**
@@ -504,37 +436,6 @@ export function createInteraction({ host, store, invoke }) {
           // 先放手再清空：重建之后 focusMemory 已经是空的，焦点不会被还回来。
           active.blur();
           store.setQuery("");
-        }
-        return;
-      }
-
-      if (action === "tag-editor") {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          const id = active.dataset.id;
-          const value = active.value;
-          // 直接把输入框清空，这样重建前 captureEditor 记到的就是空值。
-          active.value = "";
-          store.addTag(id, value);
-          return;
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          store.closeTagEditor();
-        }
-        return;
-      }
-
-      if (action === "tag-rename-editor") {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          store.commitRenameTag(active.dataset.tag, active.value);
-          return;
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          // 改成原来的名字就等于取消。
-          store.commitRenameTag(active.dataset.tag, active.dataset.tag);
         }
         return;
       }
@@ -673,33 +574,6 @@ export function createInteraction({ host, store, invoke }) {
         if (store.getUi().editingGroupId !== id) return;
         store.renameGroup(id, value);
       }, 0);
-      return;
-    }
-
-    if (target instanceof HTMLInputElement && target.dataset.action === "tag-editor") {
-      const id = target.dataset.id;
-      const value = target.value;
-      setTimeout(() => {
-        if (store.getUi().tagEditorTaskId !== id) return;
-
-        // 重建会先让旧节点失焦，再把焦点交给新节点。焦点已经在新输入框上，
-        // 就说明这次不是用户离开，输入行不该跟着关掉。
-        const live = host.querySelector(`[data-action="tag-editor"][data-id="${id}"]`);
-        if (live && document.activeElement === live) return;
-
-        if (value.trim() !== "") store.addTag(id, value);
-        store.closeTagEditor();
-      }, 0);
-      return;
-    }
-
-    if (target instanceof HTMLInputElement && target.dataset.action === "tag-rename-editor") {
-      const tag = target.dataset.tag;
-      const value = target.value;
-      setTimeout(() => {
-        if (store.getUi().editingTag !== tag) return;
-        store.commitRenameTag(tag, value);
-      }, 0);
     }
   }
 
@@ -764,14 +638,12 @@ export function createInteraction({ host, store, invoke }) {
   }
 
   function activeEditorNode() {
-    return host.querySelector(".task__editor, .group__editor, .tag-item__editor, .tag-input");
+    return host.querySelector(".task__editor, .group__editor");
   }
 
   function editorKeyOf(node) {
     if (node.classList.contains("task__editor")) return `task:${node.dataset.id}`;
-    if (node.classList.contains("group__editor")) return `group:${node.dataset.id}`;
-    if (node.classList.contains("tag-item__editor")) return `tag:${node.dataset.tag}`;
-    return `tag-input:${node.dataset.id}`;
+    return `group:${node.dataset.id}`;
   }
 
   function captureEditor() {
@@ -823,7 +695,6 @@ export function createInteraction({ host, store, invoke }) {
   host.addEventListener("paste", handlePaste);
   host.addEventListener("focusout", handleFocusOut);
   host.addEventListener("input", handleInput);
-  host.addEventListener("contextmenu", handleContextMenu);
   host.addEventListener("compositionstart", handleCompositionStart);
   host.addEventListener("compositionend", handleCompositionEnd);
   window.addEventListener("keydown", handleKeyDown);

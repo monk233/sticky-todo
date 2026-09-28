@@ -12,12 +12,9 @@ import {
   groupCounts,
   highlight,
   matchTask,
-  removeTagFromTasks,
-  renameTagInTasks,
   resolveView,
   sortGroups,
   sortTasks,
-  tagCounts,
   tasksForGroup,
   visibleTasks,
 } from "./model.js";
@@ -40,7 +37,6 @@ function makeState(overrides = {}) {
         createdAt: "2026-09-23T01:00:00.000Z",
         updatedAt: "2026-09-23T01:00:00.000Z",
         images: [],
-        tags: ["工作", "评审"],
       },
       {
         id: "t2",
@@ -51,7 +47,6 @@ function makeState(overrides = {}) {
         createdAt: "2026-09-23T02:00:00.000Z",
         updatedAt: "2026-09-23T02:30:00.000Z",
         images: [],
-        tags: ["工作"],
       },
       {
         id: "t3",
@@ -62,7 +57,6 @@ function makeState(overrides = {}) {
         createdAt: "2026-09-23T03:00:00.000Z",
         updatedAt: "2026-09-23T03:00:00.000Z",
         images: [],
-        tags: [],
       },
     ],
     ...overrides,
@@ -75,7 +69,7 @@ function makeUi(overrides = {}) {
     cursorTaskId: null,
     editingTaskId: null,
     collapsedGroups: new Set(),
-    view: { kind: "group", tag: "" },
+    view: { kind: "group" },
     query: "",
     ...overrides,
   };
@@ -215,49 +209,26 @@ test("attachmentPath 统一分隔符并去掉尾部斜杠", () => {
   );
 });
 
-test("createEmptyData 的数据文件版本是 2", () => {
-  assert.equal(createEmptyData().version, 2);
+test("createEmptyData 的数据文件版本是 1", () => {
+  assert.equal(createEmptyData().version, 1);
 });
 
-test("resolveView 只认四种视图，其余回落到分组视图", () => {
-  assert.deepEqual(resolveView(undefined), { kind: "group", tag: "" });
-  assert.deepEqual(resolveView({ view: { kind: "all" } }), { kind: "all", tag: "" });
-  assert.deepEqual(resolveView({ view: { kind: "untagged" } }), { kind: "untagged", tag: "" });
-  assert.deepEqual(resolveView({ view: { kind: "tag", tag: " 工作 " } }), {
-    kind: "tag",
-    tag: "工作",
-  });
-  assert.deepEqual(resolveView({ view: { kind: "tag", tag: "   " } }), { kind: "group", tag: "" });
-  assert.deepEqual(resolveView({ view: { kind: "tag" } }), { kind: "group", tag: "" });
-  assert.deepEqual(resolveView({ view: { kind: "没这个" } }), { kind: "group", tag: "" });
+test("resolveView 只认分组与全部，其余回落到分组视图", () => {
+  assert.deepEqual(resolveView(undefined), { kind: "group" });
+  assert.deepEqual(resolveView({}), { kind: "group" });
+  assert.deepEqual(resolveView({ view: { kind: "all" } }), { kind: "all" });
+  assert.deepEqual(resolveView({ view: { kind: "没这个" } }), { kind: "group" });
 });
 
-test("matchTask 匹配正文与标签，大小写不敏感", () => {
-  const task = { text: "Fix Login", tags: ["前端"] };
+test("matchTask 只看正文，大小写不敏感", () => {
+  const task = { text: "Fix Login", images: ["attachments/abc123.png"] };
   assert.equal(matchTask(task, ""), true);
   assert.equal(matchTask(task, "   "), true);
   assert.equal(matchTask(task, "login"), true);
   assert.equal(matchTask(task, "LOGIN"), true);
-  assert.equal(matchTask(task, "前端"), true);
-  assert.equal(matchTask(task, "端"), true);
+  assert.equal(matchTask({ text: "筛选机制" }, "机制"), true);
   assert.equal(matchTask(task, "后端"), false);
-  assert.equal(matchTask({ text: "x", images: ["attachments/abc123.png"] }, "abc123"), false);
-});
-
-test("tagCounts 的清单含已完成任务的标签，计数只算未完成", () => {
-  const counts = tagCounts(makeState());
-  assert.equal(counts.get("工作"), 1);
-  assert.equal(counts.get("评审"), 1);
-  assert.equal(counts.has(""), false);
-});
-
-test("tagCounts 对同一任务里的重复标签只计一次", () => {
-  const state = makeState({
-    tasks: [{ id: "t", groupId: "g1", done: false, tags: ["a", " a ", "a", "b"] }],
-  });
-  const counts = tagCounts(state);
-  assert.equal(counts.get("a"), 1);
-  assert.equal(counts.get("b"), 1);
+  assert.equal(matchTask(task, "abc123"), false);
 });
 
 test("highlight 切出命中片段，搜索词按字面量处理", () => {
@@ -283,7 +254,7 @@ test("highlight 切出命中片段，搜索词按字面量处理", () => {
 });
 
 test("visibleTasks 的 all 视图跨分组降平，按分组顺序排列", () => {
-  const rows = visibleTasks(makeState(), { kind: "all", tag: "" }, "");
+  const rows = visibleTasks(makeState(), { kind: "all" }, "");
   assert.deepEqual(
     rows.map((row) => row.task.id),
     ["t1", "t2", "t3"]
@@ -292,34 +263,18 @@ test("visibleTasks 的 all 视图跨分组降平，按分组顺序排列", () =>
   assert.equal(rows[2].groupName, "进行中");
 });
 
-test("visibleTasks 的 untagged 视图只剩没有标签的任务", () => {
-  const rows = visibleTasks(makeState(), { kind: "untagged", tag: "" }, "");
-  assert.deepEqual(
-    rows.map((row) => row.task.id),
-    ["t3"]
-  );
-});
-
-test("visibleTasks 的 tag 视图按标签筛选", () => {
-  const rows = visibleTasks(makeState(), { kind: "tag", tag: "工作" }, "");
-  assert.deepEqual(
-    rows.map((row) => row.task.id),
-    ["t1", "t2"]
-  );
-});
-
 test("visibleTasks 叠加隐藏已完成与搜索词", () => {
   const hidden = makeState({ settings: { ...DEFAULT_SETTINGS, hideCompleted: true } });
   assert.deepEqual(
-    visibleTasks(hidden, { kind: "all", tag: "" }, "").map((row) => row.task.id),
+    visibleTasks(hidden, { kind: "all" }, "").map((row) => row.task.id),
     ["t1", "t3"]
   );
   assert.deepEqual(
-    visibleTasks(makeState(), { kind: "group", tag: "" }, "第三条").map((row) => row.task.id),
+    visibleTasks(makeState(), { kind: "group" }, "第三条").map((row) => row.task.id),
     ["t3"]
   );
   assert.deepEqual(
-    visibleTasks(makeState(), { kind: "tag", tag: "工作" }, "第二条").map((row) => row.task.id),
+    visibleTasks(makeState(), { kind: "all" }, "第二条").map((row) => row.task.id),
     ["t2"]
   );
 });
@@ -335,43 +290,9 @@ test("visibleTasks 开启置底后被完成的任务落在各自分组的末尾"
     ],
   });
   assert.deepEqual(
-    visibleTasks(state, { kind: "all", tag: "" }, "").map((row) => row.task.id),
+    visibleTasks(state, { kind: "all" }, "").map((row) => row.task.id),
     ["a-open", "a-done", "b-open", "b-done"]
   );
-});
-
-test("renameTagInTasks 批量改名、同任务内去重，且不改动入参", () => {
-  const tasks = [
-    { id: "t1", tags: ["工作", "评审"], updatedAt: "旧" },
-    { id: "t2", tags: ["评审"], updatedAt: "旧" },
-  ];
-  const next = renameTagInTasks(tasks, "工作", "评审", "新");
-
-  assert.deepEqual(next[0].tags, ["评审"]);
-  assert.equal(next[0].updatedAt, "新");
-  assert.equal(next[1], tasks[1]);
-  assert.deepEqual(tasks[0].tags, ["工作", "评审"]);
-});
-
-test("renameTagInTasks 对空目标名、同名替换、空源名都不做改动", () => {
-  const tasks = [{ id: "t1", tags: ["工作"] }];
-  assert.deepEqual(renameTagInTasks(tasks, "工作", "", "新")[0].tags, ["工作"]);
-  assert.deepEqual(renameTagInTasks(tasks, "工作", "  ", "新")[0].tags, ["工作"]);
-  assert.deepEqual(renameTagInTasks(tasks, "工作", "工作", "新")[0].tags, ["工作"]);
-  assert.deepEqual(renameTagInTasks(tasks, "", "别的", "新")[0].tags, ["工作"]);
-});
-
-test("removeTagFromTasks 只动带这个标签的任务", () => {
-  const tasks = [
-    { id: "t1", tags: ["工作", "评审"], updatedAt: "旧" },
-    { id: "t2", tags: ["私人"], updatedAt: "旧" },
-  ];
-  const next = removeTagFromTasks(tasks, "工作", "新");
-
-  assert.deepEqual(next[0].tags, ["评审"]);
-  assert.equal(next[0].updatedAt, "新");
-  assert.equal(next[1], tasks[1]);
-  assert.deepEqual(removeTagFromTasks(tasks, "", "新")[0].tags, ["工作", "评审"]);
 });
 
 test("buildView 的分组视图保持原样，不给扁平列表", () => {
@@ -380,26 +301,18 @@ test("buildView 的分组视图保持原样，不给扁平列表", () => {
   assert.equal(view.flat, false);
   assert.equal(view.flatTasks, null);
   assert.equal(view.groups.find((item) => item.group.id === "g1").active, true);
-  assert.equal(view.viewItems[0].active, false);
-  assert.equal(view.viewItems[1].active, false);
 });
 
-test("buildView 在标签视图下给出扁平列表与标题，并标出当前项", () => {
-  const view = buildView(makeState(), makeUi({ view: { kind: "tag", tag: "工作" } }));
+test("buildView 在全部视图下给出扁平列表与标题", () => {
+  const view = buildView(makeState(), makeUi({ view: { kind: "all" } }));
 
   assert.equal(view.flat, true);
-  assert.equal(view.flatTitle, "标签「工作」");
+  assert.equal(view.flatTitle, "全部待办");
   assert.deepEqual(
     view.flatTasks.map((row) => row.task.id),
-    ["t1", "t2"]
+    ["t1", "t2", "t3"]
   );
-  assert.equal(view.tags.find((item) => item.tag === "工作").active, true);
-  assert.equal(view.tags.find((item) => item.tag === "评审").active, false);
   assert.equal(view.groups.every((item) => item.active === false), true);
-  assert.deepEqual(
-    view.tags.map((item) => item.tag),
-    ["工作", "评审"]
-  );
 });
 
 test("buildView 有搜索词时一律降平，标题改成搜索结果", () => {
@@ -416,11 +329,9 @@ test("buildView 有搜索词时一律降平，标题改成搜索结果", () => {
 test("buildView 对空数据在扁平视图下也不抛错", () => {
   const view = buildView(
     createEmptyData(),
-    makeUi({ activeGroupId: null, view: { kind: "all", tag: "" } })
+    makeUi({ activeGroupId: null, view: { kind: "all" } })
   );
 
   assert.equal(view.flat, true);
   assert.deepEqual(view.flatTasks, []);
-  assert.deepEqual(view.tags, []);
-  assert.equal(view.viewItems[0].active, true);
 });

@@ -505,8 +505,7 @@ button {
   padding: 3px;
 }
 
-.view-item,
-.tag-item {
+.view-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -522,60 +521,30 @@ button {
     color var(--duration-fast) var(--ease-out);
 }
 
-.view-item:hover,
-.tag-item:hover {
+.view-item:hover {
   background: var(--surface-soft);
   color: var(--text);
 }
 
-.view-item.is-active,
-.tag-item.is-active {
+.view-item.is-active {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
 }
 
-.view-item__icon,
-.tag-item__icon {
+.view-item__icon {
   flex: 0 0 auto;
   width: 15px;
   height: 15px;
   opacity: 0.85;
 }
 
-.view-item__name,
-.tag-item__name {
+.view-item__name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tag-item__count {
-  flex: 0 0 auto;
-  font-size: var(--text-sm);
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.tag-item.is-active .tag-item__count {
-  color: var(--accent);
-}
-
-.tag-item--editing {
-  padding: 4px 6px;
-}
-
-.tag-item__editor {
-  width: 100%;
-  padding: 5px 8px;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  outline: none;
 }
 
 /* 底栏只剩设置入口，靠右对齐。 */
@@ -973,7 +942,7 @@ button {
 }
 
 /* ==========================================================================
-   标签与命中高亮
+   分组徽章与命中高亮
    ========================================================================== */
 
 .task__badges {
@@ -991,91 +960,6 @@ button {
   background: var(--surface-soft);
   color: var(--text-faint);
   font-size: var(--text-xs);
-}
-
-.task__tags {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.tag-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  max-width: 100%;
-  padding: 0 3px 0 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--surface-soft);
-  color: var(--text-soft);
-  font-size: var(--text-xs);
-}
-
-.tag-chip__name {
-  max-width: 16ch;
-  padding: 2px 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.tag-chip__name:hover {
-  color: var(--accent);
-}
-
-.tag-chip__remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 3px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-faint);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-
-.tag-chip__remove:hover {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.tag-input {
-  width: 100%;
-  padding: 5px 8px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--text-sm);
-  outline: none;
-  transition: border-color var(--duration-fast) var(--ease-out);
-}
-
-.tag-input::placeholder {
-  color: var(--text-faint);
-}
-
-.tag-input:focus {
-  border-style: solid;
-  border-color: var(--accent);
 }
 
 mark.hit {
@@ -1545,52 +1429,6 @@ mark.hit {
 }
 
 /* ==========================================================================
-   标签右键菜单
-   ========================================================================== */
-
-.tag-menu {
-  position: fixed;
-  z-index: 55;
-  min-width: 168px;
-  padding: 5px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  box-shadow: var(--shadow-panel);
-}
-
-.tag-menu__item {
-  padding: 7px 10px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-soft);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-
-.tag-menu__item:hover {
-  background: var(--surface-soft);
-  color: var(--text);
-}
-
-.tag-menu__item--danger:hover {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.tag-menu__item--danger.is-confirming {
-  background: var(--danger);
-  color: #ffffff;
-}
-
-/* ==========================================================================
    窄窗口
    ========================================================================== */
 
@@ -1616,8 +1454,7 @@ mark.hit {
     padding: 0 6px 6px;
   }
 
-  .view-item,
-  .tag-item {
+  .view-item {
     padding: 6px 8px;
   }
 

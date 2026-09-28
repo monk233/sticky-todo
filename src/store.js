@@ -6,11 +6,8 @@
 import {
   DEFAULT_SETTINGS,
   createEmptyData,
-  removeTagFromTasks,
-  renameTagInTasks,
   resolveView,
   sortTasks,
-  taskTags,
   visibleTasks,
 } from "./model.js";
 import {
@@ -56,18 +53,22 @@ function normalizeData(raw) {
       name: normalizeGroupName(group.name),
       order: Number.isFinite(group.order) ? group.order : index,
     })),
-    tasks: tasks.map((task, index) => ({
-      ...task,
-      id: task.id ?? uuid(),
-      groupId: task.groupId ?? groups[0]?.id ?? null,
-      text: task.text ?? "",
-      done: Boolean(task.done),
-      order: Number.isFinite(task.order) ? task.order : index,
-      createdAt: task.createdAt ?? nowIso(),
-      updatedAt: task.updatedAt ?? task.createdAt ?? nowIso(),
-      images: Array.isArray(task.images) ? task.images : [],
-      tags: Array.isArray(task.tags) ? task.tags : [],
-    })),
+    tasks: tasks.map((task, index) => {
+      // 标签功能已经移除：文件里可能还留着这个旧字段，读进来直接丢掉。
+      const { tags: _dropped, ...rest } = task;
+
+      return {
+        ...rest,
+        id: rest.id ?? uuid(),
+        groupId: rest.groupId ?? groups[0]?.id ?? null,
+        text: rest.text ?? "",
+        done: Boolean(rest.done),
+        order: Number.isFinite(rest.order) ? rest.order : index,
+        createdAt: rest.createdAt ?? nowIso(),
+        updatedAt: rest.updatedAt ?? rest.createdAt ?? nowIso(),
+        images: Array.isArray(rest.images) ? rest.images : [],
+      };
+    }),
   };
 }
 
@@ -92,11 +93,8 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     collapsedGroups: new Set(),
     toasts: [],
     themes: [],
-    view: { kind: "group", tag: "" },
+    view: { kind: "group" },
     query: "",
-    tagEditorTaskId: null,
-    editingTag: null,
-    tagMenu: null,
   };
 
   const notify = () => onChange();
@@ -166,12 +164,6 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     ui.editingTaskId = null;
     ui.editingGroupId = null;
     ui.collapsedGroups = new Set([...ui.collapsedGroups].filter((id) => ids.has(id)));
-
-    // 换过数据目录之后，原先选中的标签可能已经不在数据里了。
-    const knownTags = new Set(data.tasks.flatMap((task) => taskTags(task)));
-    if (ui.view.kind === "tag" && !knownTags.has(ui.view.tag)) {
-      ui.view = { kind: "group", tag: "" };
-    }
 
     for (const warning of result.warnings ?? []) {
       toast(warning, "warn");
@@ -314,7 +306,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
 
   function selectGroup(id) {
     ui.activeGroupId = id;
-    ui.view = { kind: "group", tag: "" };
+    ui.view = { kind: "group" };
     ui.editingTaskId = null;
     const first = sortTasks(
       data.tasks.filter((task) => task.groupId === id),
@@ -433,8 +425,6 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
       createdAt: timestamp,
       updatedAt: timestamp,
       images: [],
-      // 在某个标签视图里新建，就默认带上这个标签，否则新任务一出现就不在列表里。
-      tags: ui.view.kind === "tag" ? [ui.view.tag] : [],
     };
 
     data.tasks.push(task);
@@ -594,9 +584,6 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     ui.view = resolveView({ view: next });
     ui.query = "";
     ui.editingTaskId = null;
-    ui.tagEditorTaskId = null;
-    ui.editingTag = null;
-    ui.tagMenu = null;
     ui.cursorTaskId = firstVisibleId();
     notify();
   }
@@ -605,143 +592,6 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     ui.query = String(text ?? "");
     ui.cursorTaskId = firstVisibleId();
     notify();
-  }
-
-  function openTagEditor(taskId) {
-    ui.tagEditorTaskId = taskId;
-    ui.editingTaskId = null;
-    notify();
-  }
-
-  function closeTagEditor() {
-    ui.tagEditorTaskId = null;
-    notify();
-  }
-
-  function addTag(taskId, name) {
-    const task = findTask(taskId);
-    const tag = String(name ?? "").trim();
-
-    if (!task || tag === "") {
-      notify();
-      return;
-    }
-
-    const tags = taskTags(task);
-    if (tags.includes(tag)) {
-      toast(`「${tag}」已经在这条待办上了。`, "warn");
-      notify();
-      return;
-    }
-
-    task.tags = [...tags, tag];
-    task.updatedAt = nowIso();
-    scheduleSave();
-    notify();
-  }
-
-  function removeTag(taskId, tag) {
-    const task = findTask(taskId);
-    if (!task) return;
-
-    const tags = taskTags(task);
-    if (!tags.includes(tag)) return;
-
-    task.tags = tags.filter((item) => item !== tag);
-    task.updatedAt = nowIso();
-    scheduleSave();
-    notify();
-  }
-
-  function replaceTasks(next) {
-    const changed = next.filter((task, index) => task !== data.tasks[index]).length;
-    if (changed === 0) return 0;
-    data.tasks = next;
-    scheduleSave();
-    return changed;
-  }
-
-  /** 给标签改名：全库同名替换，合并之后同一个任务上不会出现两个一样的标签。 */
-  function renameTag(from, to) {
-    const source = String(from ?? "").trim();
-    const target = String(to ?? "").trim();
-    ui.editingTag = null;
-    ui.tagMenu = null;
-
-    if (source === "" || target === "" || source === target) {
-      notify();
-      return;
-    }
-
-    const changed = replaceTasks(renameTagInTasks(data.tasks, source, target, nowIso()));
-    if (changed === 0) {
-      notify();
-      return;
-    }
-
-    if (ui.view.kind === "tag" && ui.view.tag === source) {
-      ui.view = { kind: "tag", tag: target };
-    }
-    notify();
-    toast(`已把「${source}」改名为「${target}」，影响 ${changed} 条待办。`);
-  }
-
-  function deleteTag(tag) {
-    const name = String(tag ?? "").trim();
-    ui.tagMenu = null;
-
-    if (name === "") {
-      notify();
-      return;
-    }
-
-    const changed = replaceTasks(removeTagFromTasks(data.tasks, name, nowIso()));
-    if (changed === 0) {
-      notify();
-      return;
-    }
-
-    if (ui.view.kind === "tag" && ui.view.tag === name) {
-      ui.view = { kind: "group", tag: "" };
-      ui.cursorTaskId = firstVisibleId();
-    }
-    notify();
-    toast(`已从 ${changed} 条待办上移除标签「${name}」。`);
-  }
-
-  function startRenameTag(tag) {
-    ui.editingTag = String(tag ?? "");
-    ui.tagMenu = null;
-    notify();
-  }
-
-  function commitRenameTag(tag, value) {
-    renameTag(tag, value);
-  }
-
-  function openTagMenu(tag, x, y) {
-    ui.tagMenu = { tag, x, y, confirming: false };
-    notify();
-  }
-
-  function closeTagMenu() {
-    if (!ui.tagMenu) return;
-    ui.tagMenu = null;
-    notify();
-  }
-
-  /** 对全部任务生效的动作，菜单里第一次点击只翻成确认文案。 */
-  function confirmDeleteTag() {
-    const menu = ui.tagMenu;
-    if (!menu) return;
-
-    if (!menu.confirming) {
-      ui.tagMenu = { ...menu, confirming: true };
-      notify();
-      return;
-    }
-
-    deleteTag(menu.tag);
   }
 
   // ---- 设置 ----------------------------------------------------------
@@ -855,17 +705,6 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     toggleCollapse,
     setView,
     setQuery,
-    openTagEditor,
-    closeTagEditor,
-    addTag,
-    removeTag,
-    renameTag,
-    deleteTag,
-    startRenameTag,
-    commitRenameTag,
-    openTagMenu,
-    closeTagMenu,
-    confirmDeleteTag,
     updateSetting,
     setTheme,
     reloadThemes,
