@@ -1429,6 +1429,32 @@ mark.hit {
 }
 
 /* ==========================================================================
+   更新
+   ========================================================================== */
+
+/* 设置入口上的「有新版本备好」提示点 */
+.icon-button {
+  position: relative;
+}
+
+.icon-button.has-update::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.update-status {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-soft);
+}
+
+/* ==========================================================================
    窄窗口
    ========================================================================== */
 

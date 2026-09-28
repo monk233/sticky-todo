@@ -43,4 +43,10 @@ export const icons = {
   layers: wrap(
     '<path d="M12 3.8l8.4 4.2-8.4 4.2-8.4-4.2z"/><path d="M4.4 12.6l7.6 3.8 7.6-3.8"/>'
   ),
+  refresh: wrap(
+    '<path d="M20 11.5a8 8 0 1 1-2.4-5.3"/><path d="M20 4.5v5h-5"/>'
+  ),
+  download: wrap(
+    '<path d="M12 4v11"/><path d="M7.5 11l4.5 4.5 4.5-4.5"/><path d="M5 19.5h14"/>'
+  ),
 };

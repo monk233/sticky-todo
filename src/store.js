@@ -32,6 +32,10 @@ export function nowIso() {
 
 const FALLBACK_GROUP_NAME = "未命名";
 
+/** 启动后先等一会儿再查更新，别和启动本身抢资源；之后每 6 小时查一次。 */
+const FIRST_CHECK_DELAY_MS = 8000;
+const AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
 /** 分组名不能为空：空白一律换成兜底名。 */
 function normalizeGroupName(value) {
   const trimmed = String(value ?? "").trim();
@@ -77,6 +81,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
   let dataDir = "";
   let saveTimer = null;
   let toastSeq = 0;
+  let autoCheckTimer = null;
 
   const ui = {
     activeGroupId: null,
@@ -95,6 +100,22 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     themes: [],
     view: { kind: "group" },
     query: "",
+    update: {
+      autoCheck: true,
+      endpoint: "",
+      /** idle | checking | latest | downloading | ready | failed */
+      status: "idle",
+      current: "",
+      remote: null,
+      progress: 0,
+      downloaded: 0,
+      total: null,
+      path: "",
+      verified: true,
+      error: "",
+      checkedAt: "",
+      installing: false,
+    },
   };
 
   const notify = () => onChange();
@@ -278,10 +299,12 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
   async function init() {
     const bootstrap = await invoke("get_bootstrap");
     dataDir = bootstrap.dataDir ?? "";
+    ui.update.current = bootstrap.appVersion ?? "";
     await loadThemes();
     await reload();
     reconcileThemeName();
     await syncHostState();
+    await initUpdate();
   }
 
   // ---- 分组 ----------------------------------------------------------
@@ -594,6 +617,169 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     notify();
   }
 
+  // ---- 检查更新 --------------------------------------------------------
+
+  /** 下载进度由后端事件推上来。 */
+  function applyUpdateProgress(payload) {
+    if (ui.update.status !== "downloading") return;
+
+    const downloaded = Number(payload?.downloaded ?? 0);
+    const rawTotal = Number(payload?.total ?? 0);
+    const total = rawTotal > 0 ? rawTotal : null;
+
+    ui.update.downloaded = downloaded;
+    ui.update.total = total;
+    ui.update.progress = total ? Math.min(1, downloaded / total) : 0;
+    notify();
+  }
+
+  /** 排下一次自动检查。开关关掉时只负责把计时器清干净。 */
+  function scheduleAutoCheck(delay = FIRST_CHECK_DELAY_MS) {
+    if (autoCheckTimer !== null) {
+      clearTimeout(autoCheckTimer);
+      autoCheckTimer = null;
+    }
+    if (!ui.update.autoCheck) return;
+
+    autoCheckTimer = setTimeout(() => {
+      autoCheckTimer = null;
+      void checkUpdate();
+    }, delay);
+  }
+
+  async function checkUpdate({ manual = false } = {}) {
+    // 正在查或者正在下载就别插队，免得两份请求互相盖状态。
+    if (ui.update.status === "checking" || ui.update.status === "downloading") return;
+
+    ui.update.status = "checking";
+    ui.update.error = "";
+    notify();
+
+    try {
+      const result = await invoke("check_update");
+      ui.update.current = result.currentVersion ?? ui.update.current;
+      ui.update.checkedAt = nowIso();
+
+      if (result.update) {
+        ui.update.remote = {
+          version: result.update.version,
+          notes: result.update.notes ?? "",
+          size: result.update.size ?? null,
+          sha256: result.update.sha256 ?? null,
+          downloadUrl: result.update.downloadUrl,
+        };
+        ui.update.status = "downloading";
+        ui.update.progress = 0;
+        ui.update.downloaded = 0;
+        ui.update.total = result.update.size ?? null;
+        notify();
+        await downloadUpdate();
+      } else {
+        ui.update.remote = null;
+        ui.update.status = "latest";
+        notify();
+        if (manual) toast("已经是最新版本。");
+      }
+    } catch (error) {
+      ui.update.status = "failed";
+      ui.update.error = String(error);
+      notify();
+      if (manual) toast(`检查更新失败：${String(error)}`, "warn");
+    }
+
+    scheduleAutoCheck(AUTO_CHECK_INTERVAL_MS);
+  }
+
+  async function downloadUpdate() {
+    const remote = ui.update.remote;
+    if (!remote) return;
+
+    try {
+      const result = await invoke("download_update", {
+        version: remote.version,
+        url: remote.downloadUrl,
+        sha256: remote.sha256,
+      });
+
+      ui.update.path = result.path;
+      ui.update.verified = Boolean(result.verified);
+      ui.update.progress = 1;
+      ui.update.status = "ready";
+      notify();
+      toast(`新版本 ${remote.version} 已经下载好，可以更新。`);
+    } catch (error) {
+      ui.update.status = "failed";
+      ui.update.error = String(error);
+      notify();
+      toast(`下载更新失败：${String(error)}`, "error");
+    }
+  }
+
+  async function installUpdate() {
+    if (!ui.update.path) return;
+
+    ui.update.installing = true;
+    notify();
+
+    try {
+      await invoke("install_update", { path: ui.update.path });
+      // 到这里替换脚本已经起来了，进程马上会被它接管。
+    } catch (error) {
+      ui.update.installing = false;
+      ui.update.error = String(error);
+      notify();
+      toast(`启动更新失败：${String(error)}`, "error");
+    }
+  }
+
+  async function setAutoCheck(enabled) {
+    ui.update.autoCheck = Boolean(enabled);
+    notify();
+
+    try {
+      await invoke("set_auto_check_update", { enabled: Boolean(enabled) });
+    } catch (error) {
+      onError(String(error));
+    }
+
+    scheduleAutoCheck();
+  }
+
+  function openReleases() {
+    invoke("open_releases_page").catch((error) => onError(String(error)));
+  }
+
+  async function initUpdate() {
+    try {
+      const prefs = await invoke("get_update_prefs");
+      ui.update.autoCheck = prefs.autoCheck !== false;
+      ui.update.endpoint = prefs.endpoint ?? "";
+    } catch (error) {
+      onError(String(error));
+    }
+
+    // 上次替换留下的结果：成功就报个喜，失败就告诉用户新文件在哪。
+    try {
+      const report = await invoke("take_install_result");
+
+      if (report.status === "ok" && report.version) {
+        toast(`已更新到 ${report.version}。`);
+      } else if (report.status === "failed") {
+        toast(
+          report.stagedPath
+            ? `自动替换失败，请手动把 ${report.stagedPath} 复制到程序所在目录。`
+            : "自动替换失败，请手动下载新版本替换。",
+          "error"
+        );
+      }
+    } catch (error) {
+      onError(String(error));
+    }
+
+    notify();
+    scheduleAutoCheck();
+  }
+
   // ---- 设置 ----------------------------------------------------------
 
   function applyHostSideEffects(key, value) {
@@ -705,6 +891,12 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     toggleCollapse,
     setView,
     setQuery,
+    applyUpdateProgress,
+    checkUpdate,
+    downloadUpdate,
+    installUpdate,
+    setAutoCheck,
+    openReleases,
     updateSetting,
     setTheme,
     reloadThemes,

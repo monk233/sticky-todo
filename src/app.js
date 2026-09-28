@@ -115,6 +115,14 @@ async function main() {
       store.patchUi({ settingsOpen: false, previewImage: null });
       store.addGroup("新分组");
     });
+    await api.event.listen("app://update-progress", (event) => {
+      store.applyUpdateProgress(event.payload ?? {});
+    });
+    await api.event.listen("app://check-update", () => {
+      // 托盘里点了「检查更新」：顺手把设置面板打开，让用户看到结果。
+      store.patchUi({ settingsOpen: true, settingsFresh: true });
+      void store.checkUpdate({ manual: true });
+    });
   }
 
   await store.init();

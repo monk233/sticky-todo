@@ -1,7 +1,7 @@
 //! 应用级配置。
 //!
-//! 配置目录下只保存一项内容：本机数据目录的位置。它描述的是「数据在哪」，
-//! 而不是数据本身，因此不与 data.json 一起参与同步。
+//! 配置目录下保存的是「本机」的东西：数据目录的位置，以及是否自动检查更新。
+//! 它们描述的都不是数据本身，因此不与 data.json 一起参与同步。
 
 use std::fs;
 use std::io;
@@ -11,11 +11,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::store::write_atomic;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppConfig {
     /// 用户自定义的数据目录。为空表示使用默认目录。
     pub data_dir: String,
+    /// 启动后是否自动检查更新。
+    pub auto_check_update: bool,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            data_dir: String::new(),
+            // 默认开：自用工具，能自动发现自己有新版本是好事。
+            auto_check_update: true,
+        }
+    }
 }
 
 pub struct ConfigStore {
@@ -54,10 +66,21 @@ mod tests {
         let store = ConfigStore::new(dir.path().join("config.json"));
         let config = AppConfig {
             data_dir: "D:\\记录\\待办".to_string(),
+            auto_check_update: false,
         };
 
         store.save(&config).unwrap();
         assert_eq!(store.load(), config);
+    }
+
+    #[test]
+    fn auto_check_defaults_to_on_when_the_field_is_missing() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        fs::write(&path, br#"{"dataDir":"C:\\data"}"#).unwrap();
+        let store = ConfigStore::new(&path);
+
+        assert!(store.load().auto_check_update);
     }
 
     #[test]
@@ -94,11 +117,13 @@ mod tests {
         store
             .save(&AppConfig {
                 data_dir: "first".to_string(),
+                ..Default::default()
             })
             .unwrap();
         store
             .save(&AppConfig {
                 data_dir: "second".to_string(),
+                ..Default::default()
             })
             .unwrap();
 

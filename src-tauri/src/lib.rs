@@ -1,16 +1,18 @@
 //! sticky-todo 的 Tauri 后端。
 //!
 //! 职责划分：
-//! - `config`：本机数据目录的位置；
+//! - `config`：本机数据目录的位置与更新偏好；
 //! - `store`：data.json 的原子读写；
 //! - `images`：图片导入；
 //! - `themes`：自定义主题文件的读取；
-//! - 本文件：把上面四者包装成 IPC 命令，并管理窗口、托盘与全局快捷键。
+//! - `update`：检查更新、下载与自我替换；
+//! - 本文件：把上面五者包装成 IPC 命令，并管理窗口、托盘与全局快捷键。
 
 mod config;
 mod images;
 mod store;
 mod themes;
+mod update;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,7 +26,7 @@ use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-use config::{AppConfig, ConfigStore};
+use config::ConfigStore;
 use store::{DataFile, DataStore, LoadOutcome, StoreError};
 
 const MAIN_WINDOW: &str = "main";
@@ -32,6 +34,13 @@ const MAIN_WINDOW: &str = "main";
 /// 事件名：托盘或全局快捷键要求新建任务 / 新建分组。
 const EVENT_NEW_TASK: &str = "app://new-task";
 const EVENT_NEW_GROUP: &str = "app://new-group";
+/// 事件名：托盘里点了「检查更新」。
+const EVENT_CHECK_UPDATE: &str = "app://check-update";
+/// 事件名：更新包下载进度。
+const EVENT_UPDATE_PROGRESS: &str = "app://update-progress";
+
+/// 网络不通时给用户的手动兜底入口。
+const RELEASES_PAGE: &str = "https://github.com/monk233/sticky-todo/releases";
 
 struct AppState {
     config: ConfigStore,
@@ -176,11 +185,18 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, "toggle", "显示 / 隐藏窗口", true, None::<&str>)?;
     let new_task = MenuItem::with_id(app, "new_task", "新建任务", true, None::<&str>)?;
     let new_group = MenuItem::with_id(app, "new_group", "新建分组", true, None::<&str>)?;
+    let check_update = MenuItem::with_id(app, "check_update", "检查更新", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
 
-    let items: [&dyn tauri::menu::IsMenuItem<tauri::Wry>; 5] =
-        [&toggle, &new_task, &new_group, &separator, &quit];
+    let items: [&dyn tauri::menu::IsMenuItem<tauri::Wry>; 6] = [
+        &toggle,
+        &new_task,
+        &new_group,
+        &check_update,
+        &separator,
+        &quit,
+    ];
     let menu = Menu::with_items(app, &items)?;
 
     let mut builder = TrayIconBuilder::with_id("main")
@@ -197,6 +213,10 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "new_group" => {
                 show_main_window(app);
                 let _ = app.emit_to(MAIN_WINDOW, EVENT_NEW_GROUP, ());
+            }
+            "check_update" => {
+                show_main_window(app);
+                let _ = app.emit_to(MAIN_WINDOW, EVENT_CHECK_UPDATE, ());
             }
             "quit" => quit_app(app),
             _ => {}
@@ -277,11 +297,12 @@ fn set_data_dir(app: AppHandle, state: State<'_, AppState>, path: String) -> Res
 
     let as_string = dir.to_string_lossy().to_string();
 
+    // 在现有配置上改数据目录，别把更新偏好之类的其它设置抹掉。
+    let mut config = state.config.load();
+    config.data_dir = as_string.clone();
     state
         .config
-        .save(&AppConfig {
-            data_dir: as_string.clone(),
-        })
+        .save(&config)
         .map_err(|e| format!("保存配置失败：{e}"))?;
 
     {
@@ -487,6 +508,223 @@ fn set_always_on_top(window: tauri::WebviewWindow, enabled: bool) -> Result<(), 
         .map_err(|e| format!("设置窗口置顶失败：{e}"))
 }
 
+// ---- 检查更新与自动更新 ------------------------------------------------
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReleasePayload {
+    version: String,
+    notes: String,
+    download_url: String,
+    size: Option<u64>,
+    sha256: Option<String>,
+}
+
+impl From<update::ReleaseInfo> for ReleasePayload {
+    fn from(info: update::ReleaseInfo) -> Self {
+        Self {
+            version: info.version,
+            notes: info.notes,
+            download_url: info.download_url,
+            size: info.size,
+            sha256: info.sha256,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckUpdateResult {
+    current_version: String,
+    /// 有可用更新时才有值。
+    update: Option<ReleasePayload>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadResult {
+    version: String,
+    path: String,
+    /// 源头给了摘要并校验通过时为真；没给摘要时为假（界面要标注「未校验」）。
+    verified: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdatePrefs {
+    auto_check: bool,
+    endpoint: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallReport {
+    /// `ok` / `failed` / `none`
+    status: String,
+    version: Option<String>,
+    /// 替换失败时，新版本文件留在哪儿。
+    staged_path: Option<String>,
+}
+
+/// 取出数据目录后马上放掉 `State`，这样 async 命令里可以安全地跨 await 使用。
+fn data_dir_snapshot(app: &AppHandle) -> PathBuf {
+    let state = app.state::<AppState>();
+    current_data_dir(&state)
+}
+
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<CheckUpdateResult, String> {
+    let current = app.package_info().version.to_string();
+    let endpoint = update::endpoint();
+    let lookup = current.clone();
+
+    let found = tauri::async_runtime::spawn_blocking(move || update::check(&endpoint, &lookup))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+
+    Ok(CheckUpdateResult {
+        current_version: current,
+        update: found.map(ReleasePayload::from),
+    })
+}
+
+#[tauri::command]
+async fn download_update(
+    app: AppHandle,
+    version: String,
+    url: String,
+    sha256: Option<String>,
+) -> Result<DownloadResult, String> {
+    let data_dir = data_dir_snapshot(&app);
+    let partial = update::partial_path(&data_dir, &version);
+    let final_path = update::package_path(&data_dir, &version);
+    let verified = sha256.is_some();
+
+    let progress_app = app.clone();
+    let partial_for_task = partial.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        update::download(
+            &url,
+            &partial_for_task,
+            sha256.as_deref(),
+            |downloaded, total| {
+                let _ = progress_app.emit(
+                    EVENT_UPDATE_PROGRESS,
+                    UpdateProgress { downloaded, total },
+                );
+            },
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
+
+    if final_path.exists() {
+        let _ = std::fs::remove_file(&final_path);
+    }
+    std::fs::rename(&partial, &final_path).map_err(|error| format!("保存更新包失败：{error}"))?;
+
+    Ok(DownloadResult {
+        version,
+        path: final_path.to_string_lossy().to_string(),
+        verified,
+    })
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle, path: String) -> Result<(), String> {
+    let data_dir = data_dir_snapshot(&app);
+    let target = std::env::current_exe().map_err(|error| format!("找不到当前程序的位置：{error}"))?;
+    let result_file = update::result_path(&data_dir);
+    let new_exe = PathBuf::from(path);
+    let version = new_exe
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("sticky-todo-"))
+        .unwrap_or_default()
+        .to_string();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        update::install(&new_exe, &target, &result_file, &version)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
+
+    // 替换脚本已经在等我们退出，把舞台交给它。
+    app.exit(0);
+    Ok(())
+}
+
+/// 读取上次替换的结果并清掉它，供启动时提示用户。
+#[tauri::command]
+fn take_install_result(state: State<'_, AppState>) -> InstallReport {
+    let data_dir = current_data_dir(&state);
+    let result = update::read_install_result(&data_dir);
+
+    let status = match result.outcome {
+        update::InstallOutcome::Ok => "ok",
+        update::InstallOutcome::Failed => "failed",
+        update::InstallOutcome::Unknown => "none",
+    };
+
+    if status != "none" {
+        let _ = update::clear_install_result(&data_dir);
+    }
+
+    let staged_path = result.version.as_ref().map(|version| {
+        std::env::temp_dir()
+            .join(format!("sticky-todo-{version}.exe"))
+            .to_string_lossy()
+            .to_string()
+    });
+
+    InstallReport {
+        status: status.to_string(),
+        version: result.version,
+        staged_path,
+    }
+}
+
+#[tauri::command]
+fn get_update_prefs(state: State<'_, AppState>) -> UpdatePrefs {
+    let config = state.config.load();
+
+    UpdatePrefs {
+        auto_check: config.auto_check_update,
+        endpoint: update::endpoint(),
+    }
+}
+
+#[tauri::command]
+fn set_auto_check_update(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    let mut config = state.config.load();
+    config.auto_check_update = enabled;
+
+    state
+        .config
+        .save(&config)
+        .map_err(|error| format!("保存更新设置失败：{error}"))
+}
+
+#[tauri::command]
+fn open_releases_page() -> Result<(), String> {
+    std::process::Command::new("cmd")
+        .args(["/c", "start", "", RELEASES_PAGE])
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("打开浏览器失败：{error}"))
+}
+
 #[tauri::command]
 fn quit_app_command(app: AppHandle) {
     quit_app(&app);
@@ -524,6 +762,10 @@ pub fn run() {
             };
 
             allow_asset_dir(handle, &data_dir);
+
+            // 上次留下的半截下载与旧替换脚本都没有用了，顺手清掉。
+            update::cleanup_partials(&data_dir);
+            update::cleanup_temp_scripts();
 
             app.manage(AppState {
                 config,
@@ -568,6 +810,13 @@ pub fn run() {
             set_autostart,
             set_global_hotkey,
             set_always_on_top,
+            check_update,
+            download_update,
+            install_update,
+            take_install_result,
+            get_update_prefs,
+            set_auto_check_update,
+            open_releases_page,
             quit_app_command,
         ])
         .build(tauri::generate_context!())

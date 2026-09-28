@@ -150,7 +150,13 @@ function renderSidebar(view, ctx) {
     h(
       "div",
       { class: "sidebar__foot" },
-      iconButton({ name: "settings", action: "open-settings", label: "设置" })
+      iconButton({
+        name: "settings",
+        action: "open-settings",
+        label: "设置",
+        // 有新版本备好时挂个提醒点，不打扰但看得见。
+        extraClass: view.ui.update.status === "ready" ? "has-update" : "",
+      })
     )
   );
 }
@@ -787,6 +793,97 @@ function renderSettings(view, ctx) {
             ),
             "关闭窗口只会隐藏到托盘，需要从这里退出。"
           )
+        ),
+        renderUpdateSection(view, ctx)
+      )
+    )
+  );
+}
+
+/** 更新状态的文案：一个状态一句话。 */
+function updateStatusText(update) {
+  switch (update.status) {
+    case "checking":
+      return "正在检查…";
+    case "latest":
+      return update.checkedAt
+        ? `已是最新（检查于 ${formatStamp(update.checkedAt)}）`
+        : "已是最新";
+    case "downloading": {
+      const version = update.remote?.version ?? "新版本";
+      if (!update.total) return `发现 ${version}，正在下载…`;
+      const percent = Math.round(Math.min(1, Math.max(0, update.progress)) * 100);
+      return `发现 ${version}，正在下载 ${percent}%`;
+    }
+    case "ready":
+      return `已下载 ${update.remote?.version ?? ""}${update.verified ? "" : "（未校验）"}，可以更新`;
+    case "failed":
+      return `更新失败：${update.error || "原因未知"}`;
+    default:
+      return "还没检查过";
+  }
+}
+
+function renderUpdateSection(view, ctx) {
+  const update = ctx.ui.update;
+  const busy = update.status === "checking" || update.status === "downloading";
+
+  return h(
+    "section",
+    { class: "settings__group" },
+    h("h3", {}, "更新"),
+    renderField("当前版本", h("code", { class: "path update-version" }, update.current || "—")),
+    renderField(
+      "自动检查更新",
+      renderSwitch({
+        action: "toggle-auto-check",
+        key: "autoCheck",
+        checked: update.autoCheck,
+        label: "自动检查更新",
+      }),
+      "启动后查一次，之后每 6 小时一次"
+    ),
+    h(
+      "div",
+      { class: "field field--stack" },
+      h(
+        "div",
+        { class: "field__label" },
+        h("span", {}, "更新状态"),
+        h("span", { class: "field__hint" }, update.endpoint ? `源：${update.endpoint}` : "")
+      ),
+      h("p", { class: "update-status" }, updateStatusText(update)),
+      h(
+        "div",
+        { class: "field__actions" },
+        h(
+          "button",
+          {
+            class: "ghost-button",
+            type: "button",
+            dataset: { action: "check-update" },
+            disabled: busy,
+          },
+          h("span", { class: "ghost-button__icon", html: icons.refresh }),
+          "检查更新"
+        ),
+        update.status === "ready"
+          ? h(
+              "button",
+              {
+                class: "primary-button",
+                type: "button",
+                dataset: { action: "install-update" },
+                disabled: update.installing,
+              },
+              h("span", { class: "primary-button__icon", html: icons.download }),
+              update.installing ? "正在重启…" : "更新并重启"
+            )
+          : null,
+        h(
+          "button",
+          { class: "ghost-button", type: "button", dataset: { action: "open-releases" } },
+          "打开下载页"
         )
       )
     )

@@ -319,6 +319,22 @@ export function createInteraction({ host, store, invoke }) {
         store.quitApp();
         return;
 
+      case "check-update":
+        void store.checkUpdate({ manual: true });
+        return;
+
+      case "install-update":
+        void store.installUpdate();
+        return;
+
+      case "open-releases":
+        store.openReleases();
+        return;
+
+      case "toggle-auto-check":
+        void store.setAutoCheck(!store.getUi().update.autoCheck);
+        return;
+
       default:
         return;
     }
