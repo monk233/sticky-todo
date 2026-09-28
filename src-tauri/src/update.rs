@@ -877,6 +877,20 @@ mod tests {
         assert!(!dest.exists());
     }
 
+    /// 真去问一次 GitHub，确认 HTTPS 这条路是通的。
+    ///
+    /// 本地的假源都是 http，绕开了 TLS，所以换 TLS 后端、升级 HTTP 客户端这类
+    /// 改动必须靠这条测试把关：`cargo test -- --ignored`。
+    #[test]
+    #[ignore = "需要联网：验证真实的 HTTPS 请求能打通"]
+    fn real_endpoint_is_reachable() {
+        let found = check(DEFAULT_ENDPOINT, "0.0.1").expect("真实请求失败了");
+
+        let info = found.expect("远端应该有比 0.0.1 更新的版本");
+        assert!(!info.version.is_empty());
+        assert!(info.download_url.starts_with("https://"));
+    }
+
     #[test]
     fn install_result_round_trips_through_the_file() {
         let dir = tempfile::tempdir().unwrap();

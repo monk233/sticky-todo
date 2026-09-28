@@ -58,20 +58,39 @@ jobs:
           $size = (Get-Item $exe).Length
           Write-Host ("产物 {0:N0} 字节（{1:N2} MB）" -f $size, ($size / 1MB))
 
+      - name: 生成本次更新说明
+        shell: pwsh
+        run: |
+          # 说明里要带上这个版本实际改了什么，不能每个版本都是同一段话。
+          $tag = "${{ inputs.tag || github.ref_name }}"
+          $previous = git describe --tags --abbrev=0 "$tag^" 2>$null
+          if (-not $previous) {
+            $previous = git rev-list --max-parents=0 HEAD | Select-Object -Last 1
+          }
+          $commits = git log --pretty=format:"- %s" "$previous..$tag" | Out-String
+          if ([string]::IsNullOrWhiteSpace($commits)) {
+            $commits = "- 这个版本没有新的提交"
+          }
+
+          $lines = @(
+            '下载 `sticky-todo.exe` 直接运行，不需要安装。',
+            '',
+            '运行依赖系统的 WebView2 运行时，Windows 11 已内置；Windows 10 上如果缺失，需要先装一次 WebView2 Runtime。',
+            '',
+            '产物没有代码签名，首次运行 Windows 可能提示「未知发布者」，选择「更多信息 → 仍要运行」即可。',
+            '',
+            "### 本次更新（$previous → $tag）",
+            $commits
+          )
+          Set-Content -Path release-body.md -Value ($lines -join "`n") -Encoding utf8
+          Write-Host "已生成 release-body.md"
+
       - name: 发布到 Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           name: ${{ inputs.tag || github.ref_name }}
-          generate_release_notes: true
-          body: |
-            下载 `sticky-todo.exe` 直接运行，不需要安装。
-
-            运行依赖系统的 WebView2 运行时，Windows 11 已内置；Windows 10 上
-            如果缺失，需要先装一次 WebView2 Runtime。
-
-            产物没有代码签名，首次运行 Windows 可能提示「未知发布者」，
-            选择「更多信息 → 仍要运行」即可。
+          body_path: release-body.md
           files: src-tauri/target/release/sticky-todo.exe
           draft: false
           prerelease: false

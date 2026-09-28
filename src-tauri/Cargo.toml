@@ -1,6 +1,6 @@
 [package]
 name = "sticky-todo"
-version = "1.4.0"
+version = "1.4.1"
 description = "轻量级桌面便签与待办清单"
 authors = ["monk233"]
 edition = "2021"
@@ -27,9 +27,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 hex = "0.4"
-# 只用系统 TLS：Windows 上是 schannel，不必把 rustls 那一整套打进产物
-# （默认特性会带 rustls，实测让 exe 大了 1 MB 出头）。
-ureq = { version = "2", default-features = false, features = ["native-tls"] }
+# 用默认的 rustls 后端。曾试过 default-features = false + native-tls 想省体积，
+# 结果 ureq 2.12 在发 HTTPS 时直接报「no TLS backend is configured」——换成
+# 别的后端必须跑 update::tests::real_endpoint_is_reachable 验证过才算数。
+ureq = "2"
 
 [dev-dependencies]
 tempfile = "3"
