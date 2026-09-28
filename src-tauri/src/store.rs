@@ -12,12 +12,12 @@ use serde_json::{Map, Value};
 
 /// 当前支持的数据文件版本。
 ///
-/// 版本 2 曾经给任务加过 `tags` 字段（标签功能），那个功能已经移除，版本号也
-/// 退回来了，所以现在能读的又是版本 1。
-pub const CURRENT_VERSION: u32 = 1;
+/// 1 是最早的版本；2 曾经给任务加过 `tags`（标签功能，已移除）；
+/// 3 起任务带 `dueAt` 与 `repeat`。读到 1 与 2 都会升级到 3。
+pub const CURRENT_VERSION: u32 = 3;
 
-/// 只比版本 1 多一个 `tags` 字段的旧版本。读到它时，只要文件里没有标签内容就
-/// 按版本 1 读取并降级；真有标签内容则拒绝加载，绝不静默抹掉。
+/// 标签时代的版本号。它比 1 只多一个 `tags` 字段，读到它时只要文件里没有标签
+/// 内容就能安全升级；真有标签内容则拒绝加载，绝不静默抹掉。
 pub const LEGACY_TAG_VERSION: u32 = 2;
 
 fn default_version() -> u32 {
@@ -111,6 +111,12 @@ pub struct Task {
     pub updated_at: String,
     #[serde(default)]
     pub images: Vec<String>,
+    /// 到期时间，UTC ISO8601；`None` 表示没有到期时间。
+    #[serde(default)]
+    pub due_at: Option<String>,
+    /// 重复规则：`daily` / `weekly` / `monthly` / `weekdays` / `every:N:day|week|month`。
+    #[serde(default)]
+    pub repeat: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -280,21 +286,20 @@ impl DataStore {
                 message: e.to_string(),
             })?;
 
-        if data.version > LEGACY_TAG_VERSION {
+        if data.version > CURRENT_VERSION {
             return Err(StoreError::FutureVersion {
                 found: data.version,
                 supported: CURRENT_VERSION,
             });
         }
 
-        if data.version == LEGACY_TAG_VERSION {
-            // 标签功能已经移除。文件里真存着标签就停手，只处理「用过版本 2、
-            // 但没有留下任何标签」这一种文件：把它降回来不丢任何东西。
-            if raw_has_tags(&raw) {
+        if data.version < CURRENT_VERSION {
+            // 标签时代还留着标签内容时不能升级，否则那些标签会被悄悄写没。
+            if data.version == LEGACY_TAG_VERSION && raw_has_tags(&raw) {
                 return Err(StoreError::TagDataPresent);
             }
             warnings.push(format!(
-                "数据文件版本为 {}（标签功能已移除），已按版本 {} 读取并降级。",
+                "数据文件版本为 {}，已按版本 {} 读取并升级。",
                 data.version, CURRENT_VERSION
             ));
             data.version = CURRENT_VERSION;
@@ -413,6 +418,8 @@ mod tests {
             created_at: "2026-09-23T14:04:00.000Z".to_string(),
             updated_at: "2026-09-23T14:04:00.000Z".to_string(),
             images: vec!["attachments/abc.png".to_string()],
+            due_at: Some("2026-09-30T01:00:00.000Z".to_string()),
+            repeat: Some("every:3:day".to_string()),
         });
         store.save(&data).unwrap();
 
@@ -456,7 +463,7 @@ mod tests {
             store.data_path(),
             format!(
                 r#"{{"version":{},"groups":[],"tasks":[]}}"#,
-                LEGACY_TAG_VERSION + 1
+                CURRENT_VERSION + 1
             ),
         )
         .unwrap();
@@ -465,7 +472,7 @@ mod tests {
         assert!(matches!(err, StoreError::FutureVersion { .. }));
 
         let mut future = default_data();
-        future.version = LEGACY_TAG_VERSION + 1;
+        future.version = CURRENT_VERSION + 1;
         let save_err = store.save(&future).unwrap_err();
         assert!(matches!(save_err, StoreError::FutureVersion { .. }));
     }
@@ -520,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_tag_version_file_without_tags_is_downgraded_on_load() {
+    fn legacy_tag_version_file_without_tags_is_upgraded_on_load() {
         let (_dir, store) = store();
         fs::create_dir_all(store.dir()).unwrap();
         fs::write(
@@ -533,8 +540,8 @@ mod tests {
         assert_eq!(outcome.data.version, CURRENT_VERSION);
         assert_eq!(outcome.data.tasks[0].text, "旧数据");
         assert!(
-            outcome.warnings.iter().any(|line| line.contains("降级")),
-            "降级这件事得告诉用户：{:?}",
+            outcome.warnings.iter().any(|line| line.contains("升级")),
+            "升级这件事得告诉用户：{:?}",
             outcome.warnings
         );
 
@@ -542,8 +549,49 @@ mod tests {
         let raw = fs::read_to_string(store.data_path()).unwrap();
         assert!(
             raw.contains(&format!("\"version\": {CURRENT_VERSION}")),
-            "降级后的版本号没有写回文件：{raw}"
+            "升级后的版本号没有写回文件：{raw}"
         );
+    }
+
+    #[test]
+    fn version_1_file_is_upgraded_to_current() {
+        let (_dir, store) = store();
+        fs::create_dir_all(store.dir()).unwrap();
+        fs::write(
+            store.data_path(),
+            br#"{"version":1,"groups":[],"tasks":[{"id":"t1","text":"\u8001\u6570\u636e"}]}"#,
+        )
+        .unwrap();
+
+        let outcome = store.load().unwrap();
+
+        assert_eq!(outcome.data.version, CURRENT_VERSION);
+        assert_eq!(outcome.data.tasks[0].text, "老数据");
+        assert_eq!(outcome.data.tasks[0].due_at, None);
+        store.save(&outcome.data).unwrap();
+    }
+
+    #[test]
+    fn due_at_and_repeat_survive_a_round_trip() {
+        let (_dir, store) = store();
+        fs::create_dir_all(store.dir()).unwrap();
+        fs::write(
+            store.data_path(),
+            br#"{"version":3,"groups":[],"tasks":[{"id":"t1","dueAt":"2026-09-30T01:00:00.000Z","repeat":"weekly"}]}"#,
+        )
+        .unwrap();
+
+        let data = store.load().unwrap().data;
+        assert_eq!(
+            data.tasks[0].due_at.as_deref(),
+            Some("2026-09-30T01:00:00.000Z")
+        );
+        assert_eq!(data.tasks[0].repeat.as_deref(), Some("weekly"));
+
+        store.save(&data).unwrap();
+        let raw = fs::read_to_string(store.data_path()).unwrap();
+        assert!(raw.contains("\"dueAt\""), "到期时间没有写回文件：{raw}");
+        assert!(raw.contains("\"repeat\""), "重复规则没有写回文件：{raw}");
     }
 
     #[test]
@@ -566,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_tag_version_file_with_empty_tags_is_downgraded() {
+    fn legacy_tag_version_file_with_empty_tags_is_upgraded() {
         let (_dir, store) = store();
         fs::create_dir_all(store.dir()).unwrap();
         fs::write(

@@ -9,6 +9,11 @@ import {
   formatFullStamp,
   formatAccelerator,
   highlight,
+  isOverdue,
+  parseDue,
+  repeatLabel,
+  repeatPreset,
+  splitDueForInputs,
 } from "./model.js";
 import { themeVariable } from "./theme.js";
 
@@ -65,7 +70,7 @@ function renderSearchBox(view) {
   );
 }
 
-const VIEW_ICONS = { all: "layers" };
+const VIEW_ICONS = { all: "layers", today: "calendar", overdue: "alert", week: "calendar" };
 
 function renderFixedViews(view) {
   return h(
@@ -82,7 +87,8 @@ function renderFixedViews(view) {
           title: item.label,
         },
         h("span", { class: "view-item__icon", html: icon }),
-        h("span", { class: "view-item__name" }, item.label)
+        h("span", { class: "view-item__name" }, item.label),
+        h("span", { class: "view-item__count" }, String(item.count ?? 0))
       );
     })
   );
@@ -220,6 +226,106 @@ function renderRichText(text, query) {
   );
 }
 
+/** 到期徽章：日期有、时刻有、逾期就染红。 */
+function renderDue(task) {
+  const due = parseDue(task.dueAt);
+  if (!due) return null;
+
+  const classes = ["due-badge"];
+  if (isOverdue(task, new Date())) classes.push("is-overdue");
+  if (task.done) classes.push("is-done");
+
+  return h(
+    "div",
+    { class: "task__due" },
+    h(
+      "span",
+      {
+        class: classes.join(" "),
+        title: `到期 ${formatFullStamp(task.dueAt)}`,
+      },
+      h("span", { class: "due-badge__icon", html: icons.calendar }),
+      formatStamp(task.dueAt),
+      task.repeat ? h("span", { class: "due-badge__repeat" }, repeatLabel(task.repeat)) : null
+    )
+  );
+}
+
+const REPEAT_OPTIONS = [
+  { value: "", label: "不重复" },
+  { value: "daily", label: "每天" },
+  { value: "weekdays", label: "每个工作日" },
+  { value: "weekly", label: "每周" },
+  { value: "monthly", label: "每月" },
+  { value: "every-day", label: "每 N 天" },
+  { value: "every-week", label: "每 N 周" },
+  { value: "every-month", label: "每 N 月" },
+];
+
+/** 到期与重复的行内面板。值来自任务本身，改动即保存。 */
+function renderDueEditor(task) {
+  const split = splitDueForInputs(task.dueAt);
+  const preset = repeatPreset(task.repeat);
+  const isEvery = preset.startsWith("every-");
+  const rule = task.repeat && isEvery ? task.repeat.split(":")[1] : "1";
+
+  return h(
+    "div",
+    { class: "due-editor" },
+    h("input", {
+      class: "due-editor__input",
+      type: "date",
+      value: split.date,
+      dataset: { action: "due-date", id: task.id },
+      "aria-label": "到期日期",
+    }),
+    h("input", {
+      class: "due-editor__input",
+      type: "time",
+      value: split.time,
+      dataset: { action: "due-time", id: task.id },
+      "aria-label": "到期时刻",
+    }),
+    h(
+      "select",
+      {
+        class: "due-editor__select",
+        dataset: { action: "due-repeat", id: task.id },
+        disabled: !task.dueAt,
+        "aria-label": "重复",
+      },
+      REPEAT_OPTIONS.map((option) =>
+        h("option", { value: option.value, selected: option.value === preset }, option.label)
+      )
+    ),
+    isEvery
+      ? h("input", {
+          class: "due-editor__count",
+          type: "number",
+          min: "1",
+          max: "365",
+          value: String(rule),
+          dataset: { action: "due-every", id: task.id },
+          "aria-label": "间隔数量",
+        })
+      : null,
+    h(
+      "button",
+      {
+        class: "ghost-button ghost-button--slim",
+        type: "button",
+        dataset: { action: "clear-due", id: task.id },
+      },
+      "清除"
+    ),
+    h(
+      "span",
+      { class: "due-editor__hint" },
+      task.dueAt ? "改动会立刻保存" : "先选日期，重复才有意义"
+    )
+  );
+}
+
 function renderTask(task, view, ctx, { groupName = "" } = {}) {
   const { ui, assetUrl } = ctx;
   const { settings } = view;
@@ -257,12 +363,15 @@ function renderTask(task, view, ctx, { groupName = "" } = {}) {
       : null,
     h("div", { class: "task__text" }, renderRichText(task.text, view.query)),
     renderThumbs(task, assetUrl),
+    renderDue(task),
+    ui.dueEditorTaskId === task.id ? renderDueEditor(task) : null,
     renderTaskMeta(task, settings)
   );
 
   const tools = h(
     "div",
     { class: "task__tools" },
+    iconButton({ name: "calendar", action: "edit-due", label: "设置到期", dataset: { id: task.id } }),
     iconButton({ name: "image", action: "add-image", label: "添加图片", dataset: { id: task.id } }),
     iconButton({ name: "pencil", action: "edit-task", label: "编辑", dataset: { id: task.id } }),
     iconButton({
@@ -428,9 +537,12 @@ function renderListWorkspace(view, ctx) {
   );
 }
 
-/** 空结果的说明文案：搜索与普通视图各有各的说法。 */
+/** 空结果的说明文案：搜索与各类视图各有各的说法。 */
 function emptyHintOf(view) {
   if (view.query !== "") return "没有匹配的待办。";
+  if (view.view.kind === "today") return "今天没有到期的待办。";
+  if (view.view.kind === "overdue") return "没有逾期的待办。";
+  if (view.view.kind === "week") return "这一周没有到期的待办。";
   return "这里还没有待办。按 Ctrl + N 新建一条。";
 }
 

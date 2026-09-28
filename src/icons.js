@@ -49,4 +49,10 @@ export const icons = {
   download: wrap(
     '<path d="M12 4v11"/><path d="M7.5 11l4.5 4.5 4.5-4.5"/><path d="M5 19.5h14"/>'
   ),
+  calendar: wrap(
+    '<rect x="3.75" y="5" width="16.5" height="15" rx="2.5"/><path d="M3.75 9.5h16.5"/><path d="M8 3.5v3M16 3.5v3"/>'
+  ),
+  alert: wrap(
+    '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.75v5"/><path d="M12 15.9v.35"/>'
+  ),
 };

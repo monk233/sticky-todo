@@ -11,10 +11,19 @@ import {
   formatStamp,
   groupCounts,
   highlight,
+  isDueThisWeek,
+  isDueToday,
+  isOverdue,
   matchTask,
+  nextDueAt,
+  parseLocalDateTime,
+  repeatFromPreset,
+  repeatLabel,
+  repeatPreset,
   resolveView,
   sortGroups,
   sortTasks,
+  splitDueForInputs,
   tasksForGroup,
   visibleTasks,
 } from "./model.js";
@@ -209,10 +218,6 @@ test("attachmentPath 统一分隔符并去掉尾部斜杠", () => {
   );
 });
 
-test("createEmptyData 的数据文件版本是 1", () => {
-  assert.equal(createEmptyData().version, 1);
-});
-
 test("resolveView 只认分组与全部，其余回落到分组视图", () => {
   assert.deepEqual(resolveView(undefined), { kind: "group" });
   assert.deepEqual(resolveView({}), { kind: "group" });
@@ -334,4 +339,258 @@ test("buildView 对空数据在扁平视图下也不抛错", () => {
 
   assert.equal(view.flat, true);
   assert.deepEqual(view.flatTasks, []);
+});
+
+// ---- 到期、提醒与重复 ------------------------------------------------
+
+/** 本地时间构造，省得在测试里到处写 new Date(y, m - 1, d, h, mi)。 */
+function atLocal(year, month, day, hour = 9, minute = 0) {
+  return new Date(year, month - 1, day, hour, minute, 0, 0);
+}
+
+test("isDueToday 认准本地今天的边界", () => {
+  const now = atLocal(2026, 9, 29, 15, 0);
+
+  assert.equal(isDueToday({ dueAt: atLocal(2026, 9, 29, 0, 0).toISOString() }, now), true);
+  assert.equal(isDueToday({ dueAt: atLocal(2026, 9, 29, 23, 59).toISOString() }, now), true);
+  assert.equal(isDueToday({ dueAt: atLocal(2026, 9, 30, 0, 0).toISOString() }, now), false);
+  assert.equal(isDueToday({ dueAt: atLocal(2026, 9, 28, 23, 59).toISOString() }, now), false);
+  assert.equal(isDueToday({ dueAt: null }, now), false);
+  assert.equal(isDueToday({}, now), false);
+});
+
+test("isOverdue 只认未完成的任务", () => {
+  const now = atLocal(2026, 9, 29, 15, 0);
+  const past = atLocal(2026, 9, 29, 9, 0).toISOString();
+
+  assert.equal(isOverdue({ dueAt: past, done: false }, now), true);
+  assert.equal(isOverdue({ dueAt: past, done: true }, now), false);
+  assert.equal(isOverdue({ dueAt: atLocal(2026, 9, 29, 16, 0).toISOString() }, now), false);
+  assert.equal(isOverdue({ dueAt: null }, now), false);
+});
+
+test("isDueThisWeek 以周一到下周一为界", () => {
+  // 2026-09-29 是周二，本周一是 09-28，下周一是 10-05
+  const now = atLocal(2026, 9, 29, 12, 0);
+
+  assert.equal(isDueThisWeek({ dueAt: atLocal(2026, 9, 28, 0, 0).toISOString() }, now), true);
+  assert.equal(isDueThisWeek({ dueAt: atLocal(2026, 10, 4, 23, 59).toISOString() }, now), true);
+  assert.equal(isDueThisWeek({ dueAt: atLocal(2026, 10, 5, 0, 0).toISOString() }, now), false);
+  assert.equal(isDueThisWeek({ dueAt: atLocal(2026, 9, 27, 23, 0).toISOString() }, now), false);
+
+  // 周日当天，本周仍然从上周一算起
+  const sunday = atLocal(2026, 10, 4, 12, 0);
+  assert.equal(isDueThisWeek({ dueAt: atLocal(2026, 9, 28, 9, 0).toISOString() }, sunday), true);
+});
+
+test("nextDueAt 推进到下一个周期，并跳过已经过去的时间", () => {
+  const now = atLocal(2026, 9, 29, 15, 0);
+  const due = atLocal(2026, 9, 29, 9, 0).toISOString();
+
+  // 今天 9 点已经过去，下一次是明天 9 点
+  assert.equal(nextDueAt(due, "daily", now), atLocal(2026, 9, 30, 9, 0).toISOString());
+  assert.equal(nextDueAt(due, "weekly", now), atLocal(2026, 10, 6, 9, 0).toISOString());
+  assert.equal(nextDueAt(due, "every:3:day", now), atLocal(2026, 10, 2, 9, 0).toISOString());
+});
+
+test("nextDueAt 到期时间还没到时也只推一个周期", () => {
+  const now = atLocal(2026, 9, 29, 8, 0);
+  const due = atLocal(2026, 9, 29, 9, 0).toISOString();
+
+  assert.equal(nextDueAt(due, "daily", now), atLocal(2026, 9, 30, 9, 0).toISOString());
+});
+
+test("nextDueAt 会一直推进到未来（跳过多个月没打开的情况）", () => {
+  const now = atLocal(2026, 9, 29, 15, 0);
+  const due = atLocal(2026, 1, 29, 9, 0).toISOString();
+
+  const next = nextDueAt(due, "every:2:month", now);
+  assert.equal(next, atLocal(2026, 11, 29, 9, 0).toISOString());
+});
+
+test("weekdays 跳过周末", () => {
+  const friday = atLocal(2026, 10, 2, 9, 0);
+  const now = atLocal(2026, 10, 2, 10, 0);
+
+  assert.equal(nextDueAt(friday.toISOString(), "weekdays", now), atLocal(2026, 10, 5, 9, 0).toISOString());
+});
+
+test("monthly 遇到没有该日号的月份退到当月最后一天", () => {
+  const jan31 = atLocal(2026, 1, 31, 9, 0);
+  const now = atLocal(2026, 1, 31, 10, 0);
+
+  assert.equal(nextDueAt(jan31.toISOString(), "monthly", now), atLocal(2026, 2, 28, 9, 0).toISOString());
+});
+
+test("nextDueAt 对缺失或非法输入返回 null", () => {
+  const now = new Date();
+  const due = now.toISOString();
+
+  assert.equal(nextDueAt(null, "daily", now), null);
+  assert.equal(nextDueAt(due, null, now), null);
+  assert.equal(nextDueAt(due, "每两天", now), null);
+  assert.equal(nextDueAt(due, "every:0:day", now), null);
+  assert.equal(nextDueAt(due, "every:2:fortnight", now), null);
+});
+
+test("repeatLabel 给出人看的文案", () => {
+  assert.equal(repeatLabel(null), "不重复");
+  assert.equal(repeatLabel("daily"), "每天");
+  assert.equal(repeatLabel("weekdays"), "每个工作日");
+  assert.equal(repeatLabel("weekly"), "每周");
+  assert.equal(repeatLabel("monthly"), "每月");
+  assert.equal(repeatLabel("every:3:day"), "每 3 天");
+  assert.equal(repeatLabel("every:2:month"), "每 2 个月");
+});
+
+test("resolveView 认五种视图，其余回落到分组", () => {
+  assert.deepEqual(resolveView({ view: { kind: "today" } }), { kind: "today" });
+  assert.deepEqual(resolveView({ view: { kind: "overdue" } }), { kind: "overdue" });
+  assert.deepEqual(resolveView({ view: { kind: "week" } }), { kind: "week" });
+  assert.deepEqual(resolveView({ view: { kind: "group" } }), { kind: "group" });
+  assert.deepEqual(resolveView({ view: { kind: "没这个" } }), { kind: "group" });
+});
+
+test("visibleTasks 的今天与逾期视图各取所需", () => {
+  const now = atLocal(2026, 9, 29, 15, 0);
+  const state = makeState({
+    tasks: [
+      { id: "past", groupId: "g1", done: false, dueAt: atLocal(2026, 9, 29, 9, 0).toISOString(), order: 0, createdAt: "a" },
+      { id: "later", groupId: "g1", done: false, dueAt: atLocal(2026, 9, 29, 18, 0).toISOString(), order: 1, createdAt: "b" },
+      { id: "tomorrow", groupId: "g1", done: false, dueAt: atLocal(2026, 9, 30, 9, 0).toISOString(), order: 2, createdAt: "c" },
+      { id: "none", groupId: "g1", done: false, order: 3, createdAt: "d" },
+      { id: "donePast", groupId: "g1", done: true, dueAt: atLocal(2026, 9, 29, 8, 0).toISOString(), order: 4, createdAt: "e" },
+    ],
+  });
+
+  // 聚合视图统一按到期时间升序，已完成的也在里面（hideCompleted 关着）
+  assert.deepEqual(
+    visibleTasks(state, { kind: "today" }, "", now).map((row) => row.task.id),
+    ["donePast", "past", "later"]
+  );
+  assert.deepEqual(
+    visibleTasks(state, { kind: "overdue" }, "", now).map((row) => row.task.id),
+    ["past"]
+  );
+  assert.deepEqual(
+    visibleTasks(state, { kind: "week" }, "", now).map((row) => row.task.id),
+    ["donePast", "past", "later", "tomorrow"]
+  );
+});
+
+test("聚合视图按到期时间排：有到期的在前，没到期的跟在后面", () => {
+  const now = atLocal(2026, 9, 29, 15, 0);
+  const state = makeState({
+    tasks: [
+      { id: "late", groupId: "g1", dueAt: atLocal(2026, 10, 2, 9, 0).toISOString(), order: 0, createdAt: "a" },
+      { id: "none", groupId: "g1", dueAt: null, order: 1, createdAt: "b" },
+      { id: "soon", groupId: "g1", dueAt: atLocal(2026, 10, 1, 9, 0).toISOString(), order: 2, createdAt: "c" },
+    ],
+  });
+
+  assert.deepEqual(
+    visibleTasks(state, { kind: "all" }, "", now).map((row) => row.task.id),
+    ["soon", "late", "none"]
+  );
+});
+
+test("分组视图保持手动顺序，不按到期时间重排", () => {
+  const now = atLocal(2026, 9, 29, 15, 0);
+  const state = makeState({
+    tasks: [
+      { id: "first", groupId: "g1", dueAt: atLocal(2026, 10, 2, 9, 0).toISOString(), order: 0, createdAt: "a" },
+      { id: "second", groupId: "g1", dueAt: atLocal(2026, 10, 1, 9, 0).toISOString(), order: 1, createdAt: "b" },
+    ],
+  });
+
+  assert.deepEqual(
+    visibleTasks(state, { kind: "group" }, "", now).map((row) => row.task.id),
+    ["first", "second"]
+  );
+});
+
+test("buildView 给出四个固定视图与各自的未完成计数", () => {
+  const now = atLocal(2026, 9, 29, 15, 0);
+  const state = makeState({
+    tasks: [
+      { id: "overdue", groupId: "g1", done: false, dueAt: atLocal(2026, 9, 29, 9, 0).toISOString(), order: 0, createdAt: "a" },
+      { id: "today", groupId: "g1", done: false, dueAt: atLocal(2026, 9, 29, 18, 0).toISOString(), order: 1, createdAt: "b" },
+      { id: "week", groupId: "g1", done: false, dueAt: atLocal(2026, 10, 1, 9, 0).toISOString(), order: 2, createdAt: "c" },
+      { id: "none", groupId: "g1", done: false, order: 3, createdAt: "d" },
+      { id: "doneOverdue", groupId: "g1", done: true, dueAt: atLocal(2026, 9, 29, 8, 0).toISOString(), order: 4, createdAt: "e" },
+    ],
+  });
+
+  const view = buildView(state, makeUi(), now);
+  const items = Object.fromEntries(view.viewItems.map((item) => [item.key, item]));
+
+  assert.deepEqual(Object.keys(items), ["all", "today", "overdue", "week"]);
+  assert.equal(items.all.count, 4);
+  assert.equal(items.today.count, 2);
+  assert.equal(items.overdue.count, 1);
+  assert.equal(items.week.count, 3);
+  assert.equal(items.today.label, "今天");
+  assert.equal(view.flatTitle, "全部待办");
+});
+
+test("buildView 在新视图下给出对应标题", () => {
+  const now = atLocal(2026, 9, 29, 15, 0);
+  const state = makeState();
+
+  assert.equal(buildView(state, makeUi({ view: { kind: "today" } }), now).flatTitle, "今天");
+  assert.equal(buildView(state, makeUi({ view: { kind: "overdue" } }), now).flatTitle, "逾期");
+  assert.equal(buildView(state, makeUi({ view: { kind: "week" } }), now).flatTitle, "本周");
+  assert.equal(
+    buildView(state, makeUi({ view: { kind: "today" }, query: "第三" }), now).flatTitle,
+    "搜索结果"
+  );
+});
+
+test("createEmptyData 的数据文件版本是 3", () => {
+  assert.equal(createEmptyData().version, 3);
+});
+
+test("repeatPreset 与 repeatFromPreset 来回一致", () => {
+  assert.equal(repeatPreset(null), "");
+  assert.equal(repeatPreset("daily"), "daily");
+  assert.equal(repeatPreset("weekdays"), "weekdays");
+  assert.equal(repeatPreset("weekly"), "weekly");
+  assert.equal(repeatPreset("monthly"), "monthly");
+  assert.equal(repeatPreset("every:3:day"), "every-day");
+  assert.equal(repeatPreset("every:2:month"), "every-month");
+
+  assert.equal(repeatFromPreset("", 3), null);
+  assert.equal(repeatFromPreset("daily", 9), "daily");
+  assert.equal(repeatFromPreset("every-day", 3), "every:3:day");
+  assert.equal(repeatFromPreset("every-day"), "every:2:day");
+  assert.equal(repeatFromPreset("every-week", 0), "every:2:week");
+  assert.equal(repeatFromPreset("every-month", 2.7), "every:2:month");
+  assert.equal(repeatFromPreset("没这个", 2), null);
+});
+
+test("parseLocalDateTime 与 splitDueForInputs 来回一致", () => {
+  const date = parseLocalDateTime("2026-09-30", "18:30");
+  assert.equal(date.getFullYear(), 2026);
+  assert.equal(date.getMonth(), 8);
+  assert.equal(date.getDate(), 30);
+  assert.equal(date.getHours(), 18);
+  assert.equal(date.getMinutes(), 30);
+
+  const split = splitDueForInputs(date.toISOString());
+  assert.deepEqual(split, { date: "2026-09-30", time: "18:30" });
+});
+
+test("parseLocalDateTime 缺时刻时按早上九点算，日期非法时返回 null", () => {
+  const fallback = parseLocalDateTime("2026-09-30", "");
+  assert.equal(fallback.getHours(), 9);
+  assert.equal(fallback.getMinutes(), 0);
+
+  assert.equal(parseLocalDateTime("", "09:00"), null);
+  assert.equal(parseLocalDateTime("明天", "09:00"), null);
+  assert.equal(parseLocalDateTime(null, null), null);
+});
+
+test("splitDueForInputs 对空值给默认时刻", () => {
+  assert.deepEqual(splitDueForInputs(null), { date: "", time: "09:00" });
+  assert.deepEqual(splitDueForInputs("不是时间"), { date: "", time: "09:00" });
 });

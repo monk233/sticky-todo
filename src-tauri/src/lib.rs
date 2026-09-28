@@ -10,6 +10,7 @@
 
 mod config;
 mod images;
+mod reminders;
 mod store;
 mod themes;
 mod update;
@@ -508,6 +509,33 @@ fn set_always_on_top(window: tauri::WebviewWindow, enabled: bool) -> Result<(), 
         .map_err(|e| format!("设置窗口置顶失败：{e}"))
 }
 
+// ---- 到期提醒 ---------------------------------------------------------
+
+/// 前端推上来的提醒计划：未完成、且有到期时间的任务。
+#[tauri::command]
+fn set_reminders(
+    state: State<'_, reminders::SharedReminders>,
+    items: Vec<reminders::ReminderItem>,
+) {
+    reminders::replace_items(&state, items);
+}
+
+/// 托盘提示里的摘要，例如「逾期 1 · 今天 2」。
+#[tauri::command]
+fn set_tray_summary(app: AppHandle, summary: String) {
+    let Some(tray) = app.tray_by_id("main") else {
+        return;
+    };
+
+    let trimmed = summary.trim();
+    let text = if trimmed.is_empty() {
+        "待办便签".to_string()
+    } else {
+        format!("待办便签 · {trimmed}")
+    };
+    let _ = tray.set_tooltip(Some(&text));
+}
+
 // ---- 检查更新与自动更新 ------------------------------------------------
 
 #[derive(Serialize, Clone)]
@@ -735,6 +763,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -775,6 +804,11 @@ pub fn run() {
                 quitting: AtomicBool::new(false),
             });
 
+            // 提醒计划由前端推过来，这里起一个常驻线程按点响。
+            let reminders = reminders::new_shared();
+            app.manage(reminders.clone());
+            reminders::spawn_worker(handle.clone(), reminders);
+
             build_tray(handle)?;
             Ok(())
         })
@@ -810,6 +844,8 @@ pub fn run() {
             set_autostart,
             set_global_hotkey,
             set_always_on_top,
+            set_reminders,
+            set_tray_summary,
             check_update,
             download_update,
             install_update,

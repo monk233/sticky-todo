@@ -1429,6 +1429,108 @@ mark.hit {
 }
 
 /* ==========================================================================
+   到期与重复
+   ========================================================================== */
+
+.task__due {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.due-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.due-badge__icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.85;
+}
+
+.due-badge.is-overdue {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.due-badge.is-done {
+  opacity: 0.55;
+}
+
+.due-badge__repeat {
+  padding-left: 6px;
+  border-left: 1px solid currentColor;
+  opacity: 0.75;
+}
+
+.due-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.due-editor__input,
+.due-editor__select,
+.due-editor__count {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  outline: none;
+  /* 让原生的日期／时间选择器在深色主题下也别刺眼 */
+  color-scheme: light dark;
+}
+
+.due-editor__count {
+  width: 64px;
+}
+
+.due-editor__input:focus,
+.due-editor__select:focus,
+.due-editor__count:focus {
+  border-color: var(--accent);
+}
+
+.due-editor__hint {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+.ghost-button--slim {
+  padding: 4px 8px;
+  font-size: var(--text-sm);
+}
+
+.view-item__count {
+  flex: 0 0 auto;
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.view-item.is-active .view-item__count {
+  color: var(--accent);
+}
+
+/* ==========================================================================
    更新
    ========================================================================== */
 

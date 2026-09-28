@@ -3,6 +3,8 @@
 // 所有点击都通过 data-action 委托处理；键盘快捷键在 window 上统一分发。
 // 编辑器在每次重建 DOM 之后需要恢复焦点与光标位置，这一步也在这里做。
 
+import { repeatFromPreset } from "./model.js";
+
 const MODIFIER_ONLY = new Set(["Control", "Shift", "Alt", "Meta", "CapsLock", "Dead"]);
 
 /** 两次点击同一行的间隔在此之内，算双击。 */
@@ -11,8 +13,11 @@ const DOUBLE_CLICK_MS = 400;
 /** 搜索框每敲一下都重建整棵 DOM 太吵，等手停一下再过滤。 */
 const SEARCH_DELAY_MS = 140;
 
-/** 值由状态提供、只需要在重建后找回焦点与光标的输入框。 */
-const FOCUS_ACTIONS = new Set(["search"]);
+/** 值由状态提供、只需要在重建后找回焦点的输入框。 */
+const FOCUS_ACTIONS = new Set(["search", "due-date", "due-time", "due-every"]);
+
+/** 这些类型的输入框没有「光标位置」这回事，恢复选区会直接抛错。 */
+const NO_CARET_TYPES = new Set(["date", "time", "number"]);
 
 function extensionOf(file) {
   const name = typeof file.name === "string" ? file.name : "";
@@ -183,6 +188,11 @@ export function createInteraction({ host, store, invoke }) {
 
     flushEditing(target);
 
+    // 点到到期面板以外的地方就收起它，和点到编辑器外面就结束编辑一个道理。
+    if (store.getUi().dueEditorTaskId && !target.closest(".due-editor")) {
+      store.closeDueEditor();
+    }
+
     // 提交会重建 DOM，把这次点击命中的节点换掉。搜索框是靠浏览器默认行为拿
     // 焦点的，必须在重建后的新节点上再接一次，否则这一下就白点了。
     if (action === "search") {
@@ -199,6 +209,18 @@ export function createInteraction({ host, store, invoke }) {
       case "editor":
       case "group-editor":
       case "search":
+      case "due-date":
+      case "due-time":
+      case "due-repeat":
+      case "due-every":
+        return;
+
+      case "edit-due":
+        store.openDueEditor(id);
+        return;
+
+      case "clear-due":
+        store.clearDue(id);
         return;
 
       case "settings-backdrop":
@@ -367,9 +389,46 @@ export function createInteraction({ host, store, invoke }) {
 
   function handleInput(event) {
     const target = event.target;
-    if (!target || target.dataset?.action !== "search") return;
-    if (event.isComposing) return;
-    scheduleSearch(target.value);
+    const action = target?.dataset?.action;
+
+    if (action === "search") {
+      if (event.isComposing) return;
+      scheduleSearch(target.value);
+      return;
+    }
+
+    if (action === "due-date" || action === "due-time") {
+      applyDueFromInputs(target);
+      return;
+    }
+
+    if (action === "due-repeat" || action === "due-every") {
+      applyRepeatFromInputs(target);
+    }
+  }
+
+  /** 日期或时刻变了：把同一行两个输入框的值凑一起写回任务。 */
+  function applyDueFromInputs(target) {
+    const row = target.closest(".due-editor");
+    if (!row) return;
+
+    const dateInput = row.querySelector('[data-action="due-date"]');
+    const timeInput = row.querySelector('[data-action="due-time"]');
+    store.setDue(target.dataset.id, dateInput?.value ?? "", timeInput?.value ?? "");
+  }
+
+  /** 重复下拉或间隔数字变了：合成规则值写回任务。 */
+  function applyRepeatFromInputs(target) {
+    const row = target.closest(".due-editor");
+    if (!row) return;
+
+    const select = row.querySelector('[data-action="due-repeat"]');
+    const count = row.querySelector('[data-action="due-every"]');
+    store.setRepeat(
+      target.dataset.id,
+      // 数字框这时可能还没渲染出来：交空值，让模型按默认间隔处理。
+      repeatFromPreset(select?.value ?? "", count?.value)
+    );
   }
 
   function handleCompositionStart(event) {
@@ -538,6 +597,10 @@ export function createInteraction({ host, store, invoke }) {
         return;
       case "Escape":
         event.preventDefault();
+        if (store.getUi().dueEditorTaskId) {
+          store.closeDueEditor();
+          return;
+        }
         store.patchUi({ editingTaskId: null });
         return;
       default:
@@ -646,6 +709,9 @@ export function createInteraction({ host, store, invoke }) {
     if (!node) return;
 
     node.focus({ preventScroll: true });
+
+    // 日期、时刻、数字这类输入框没有光标位置，硬设选区会抛 InvalidStateError。
+    if (NO_CARET_TYPES.has(node.type)) return;
     if (typeof node.setSelectionRange !== "function") return;
 
     const end = Number.isFinite(memory.end) ? memory.end : node.value.length;

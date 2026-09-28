@@ -6,6 +6,11 @@
 import {
   DEFAULT_SETTINGS,
   createEmptyData,
+  formatStamp,
+  isDueToday,
+  isOverdue,
+  nextDueAt,
+  parseLocalDateTime,
   resolveView,
   sortTasks,
   visibleTasks,
@@ -71,6 +76,8 @@ function normalizeData(raw) {
         createdAt: rest.createdAt ?? nowIso(),
         updatedAt: rest.updatedAt ?? rest.createdAt ?? nowIso(),
         images: Array.isArray(rest.images) ? rest.images : [],
+        dueAt: rest.dueAt ?? null,
+        repeat: rest.repeat ?? null,
       };
     }),
   };
@@ -100,6 +107,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     themes: [],
     view: { kind: "group" },
     query: "",
+    dueEditorTaskId: null,
     update: {
       autoCheck: true,
       endpoint: "",
@@ -144,6 +152,10 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
       saveTimer = null;
       void flush();
     }, saveDelay);
+
+    // 数据一变就把提醒计划与托盘摘要刷新一遍，省得每个改动点都得记着调。
+    void pushReminders();
+    void pushTraySummary();
   }
 
   async function flush() {
@@ -305,6 +317,10 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     reconcileThemeName();
     await syncHostState();
     await initUpdate();
+
+    // 启动时先把提醒计划和托盘摘要交给后端，之后每次数据变化都会再推。
+    void pushReminders();
+    void pushTraySummary();
   }
 
   // ---- 分组 ----------------------------------------------------------
@@ -448,6 +464,8 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
       createdAt: timestamp,
       updatedAt: timestamp,
       images: [],
+      dueAt: null,
+      repeat: null,
     };
 
     data.tasks.push(task);
@@ -505,11 +523,52 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
   function toggleTask(id) {
     const task = findTask(id);
     if (!task) return;
+
+    const wasDone = task.done;
     task.done = !task.done;
     task.updatedAt = nowIso();
     ui.cursorTaskId = id;
+
+    // 刚勾上完成：带重复规则的任务顺手把下一次排出来。
+    if (!wasDone && task.done) {
+      spawnNextOccurrence(task);
+    }
+
     scheduleSave();
     notify();
+  }
+
+  /**
+   * 重复任务：完成时排下一条。
+   *
+   * 原任务留着做记录，新任务复制内容与图片、到期时间按规则往前推。推进之后
+   * 仍然比现在还早的话会继续推，所以放了很久的每日任务不会被排成一串过期条目。
+   */
+  function spawnNextOccurrence(task) {
+    const nextDue = nextDueAt(task.dueAt, task.repeat, new Date());
+    if (!nextDue) return null;
+
+    const siblings = data.tasks.filter((item) => item.groupId === task.groupId);
+    const maxOrder = siblings.reduce(
+      (max, item) => Math.max(max, Number(item.order) || 0),
+      -1
+    );
+    const timestamp = nowIso();
+
+    const next = {
+      ...task,
+      id: uuid(),
+      done: false,
+      order: maxOrder + 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      images: [...(task.images ?? [])],
+      dueAt: nextDue,
+    };
+
+    data.tasks.push(next);
+    toast(`已排下一次：${formatStamp(nextDue)}`);
+    return next;
   }
 
   function removeTask(id, { silent = false } = {}) {
@@ -780,6 +839,98 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     scheduleAutoCheck();
   }
 
+  // ---- 到期与提醒 ------------------------------------------------------
+
+  function openDueEditor(taskId) {
+    ui.dueEditorTaskId = taskId;
+    ui.editingTaskId = null;
+    notify();
+  }
+
+  function closeDueEditor() {
+    ui.dueEditorTaskId = null;
+    notify();
+  }
+
+  /** 设置到期时间；日期清空就等于不要到期时间。 */
+  function setDue(taskId, dateText, timeText) {
+    const task = findTask(taskId);
+    if (!task) return;
+
+    const date = String(dateText ?? "").trim();
+    if (date === "") {
+      clearDue(taskId);
+      return;
+    }
+
+    const parsed = parseLocalDateTime(date, timeText);
+    if (!parsed) return;
+
+    task.dueAt = parsed.toISOString();
+    task.updatedAt = nowIso();
+    scheduleSave();
+    notify();
+  }
+
+  function setRepeat(taskId, repeat) {
+    const task = findTask(taskId);
+    if (!task) return;
+
+    const value = String(repeat ?? "").trim();
+    task.repeat = value === "" ? null : value;
+    task.updatedAt = nowIso();
+    scheduleSave();
+    notify();
+  }
+
+  /** 清掉到期与重复：重复是挂在到期上的，到期没了它就无从谈起。 */
+  function clearDue(taskId) {
+    const task = findTask(taskId);
+    if (!task) return;
+
+    task.dueAt = null;
+    task.repeat = null;
+    task.updatedAt = nowIso();
+    scheduleSave();
+    notify();
+  }
+
+  /** 把「未完成 + 有到期时间」的任务推给后端，由它按点提醒。 */
+  async function pushReminders() {
+    const items = data.tasks
+      .filter((task) => !task.done && task.dueAt)
+      .map((task) => ({
+        id: task.id,
+        dueMs: new Date(task.dueAt).getTime(),
+        text: task.text || "（无内容）",
+      }))
+      .filter((item) => Number.isFinite(item.dueMs));
+
+    try {
+      await invoke("set_reminders", { items });
+    } catch (error) {
+      onError(String(error));
+    }
+  }
+
+  /** 托盘提示里的摘要。 */
+  async function pushTraySummary() {
+    const now = new Date();
+    const open = data.tasks.filter((task) => !task.done);
+    const overdue = open.filter((task) => isOverdue(task, now)).length;
+    const today = open.filter((task) => isDueToday(task, now) && !isOverdue(task, now)).length;
+
+    const parts = [];
+    if (overdue > 0) parts.push(`逾期 ${overdue}`);
+    if (today > 0) parts.push(`今天 ${today}`);
+
+    try {
+      await invoke("set_tray_summary", { summary: parts.join(" · ") });
+    } catch (error) {
+      onError(String(error));
+    }
+  }
+
   // ---- 设置 ----------------------------------------------------------
 
   function applyHostSideEffects(key, value) {
@@ -891,6 +1042,13 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     toggleCollapse,
     setView,
     setQuery,
+    openDueEditor,
+    closeDueEditor,
+    setDue,
+    setRepeat,
+    clearDue,
+    pushReminders,
+    pushTraySummary,
     applyUpdateProgress,
     checkUpdate,
     downloadUpdate,
