@@ -35,6 +35,19 @@ jobs:
       - name: 运行前端单元测试
         run: node --test "src/*.test.js"
 
+      - name: 检查 tag 与版本号是否一致
+        shell: pwsh
+        run: |
+          # 不一致的话，自动更新会把同一个版本反复当成新版本推给用户。
+          $tag = "${{ inputs.tag || github.ref_name }}".Trim()
+          $version = $tag.TrimStart("v")
+          $cargo = [regex]::Match((Get-Content src-tauri/Cargo.toml -Raw), 'version = "([^"]+)"').Groups[1].Value
+          $config = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($version -ne $cargo -or $version -ne $config) {
+            throw "版本号对不上：tag=$version Cargo.toml=$cargo tauri.conf.json=$config"
+          }
+          Write-Host "版本号一致：$version"
+
       - name: 构建 release
         run: cargo build --release --manifest-path src-tauri/Cargo.toml
 
