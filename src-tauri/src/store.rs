@@ -12,9 +12,13 @@ use serde_json::{Map, Value};
 
 /// 当前支持的数据文件版本。
 ///
-/// 版本 2 起任务带 `tags` 字段。加字段本身向后兼容，但旧版本程序读到版本 2 的
-/// 文件会拒绝写入，而不是把不认识的字段悄悄丢掉，所以这里必须跟着升。
-pub const CURRENT_VERSION: u32 = 2;
+/// 版本 2 曾经给任务加过 `tags` 字段（标签功能），那个功能已经移除，版本号也
+/// 退回来了，所以现在能读的又是版本 1。
+pub const CURRENT_VERSION: u32 = 1;
+
+/// 只比版本 1 多一个 `tags` 字段的旧版本。读到它时，只要文件里没有标签内容就
+/// 按版本 1 读取并降级；真有标签内容则拒绝加载，绝不静默抹掉。
+pub const LEGACY_TAG_VERSION: u32 = 2;
 
 fn default_version() -> u32 {
     CURRENT_VERSION
@@ -107,8 +111,6 @@ pub struct Task {
     pub updated_at: String,
     #[serde(default)]
     pub images: Vec<String>,
-    #[serde(default)]
-    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -175,6 +177,30 @@ pub enum StoreError {
         supported: u32,
     },
     Serialize(String),
+    /// 文件里还有标签内容，而这个版本已经没有标签功能了。
+    TagDataPresent,
+}
+
+/// 原始 JSON 里是否真的存着标签。
+///
+/// `Task` 已经不再解析 `tags`，所以这件事只能在解析之前从原始文本里看。
+fn raw_has_tags(raw: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<Value>(raw) else {
+        return false;
+    };
+
+    value
+        .get("tasks")
+        .and_then(Value::as_array)
+        .map(|tasks| {
+            tasks.iter().any(|task| {
+                task.get("tags")
+                    .and_then(Value::as_array)
+                    .map(|tags| !tags.is_empty())
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
 }
 
 impl std::fmt::Display for StoreError {
@@ -191,6 +217,10 @@ impl std::fmt::Display for StoreError {
                 "数据文件版本为 {found}，高于本程序支持的 {supported}。请使用更新版本的程序打开，本程序不会覆盖它。"
             ),
             StoreError::Serialize(message) => write!(f, "序列化数据失败：{message}"),
+            StoreError::TagDataPresent => write!(
+                f,
+                "这份数据里还有标签内容，而当前版本已经移除了标签功能。为了不直接抹掉它们，程序不会写入这份文件：可以先用 1.2.0 打开并清掉标签，或手动编辑 data.json 删掉各任务里的 tags 字段。"
+            ),
         }
     }
 }
@@ -250,18 +280,21 @@ impl DataStore {
                 message: e.to_string(),
             })?;
 
-        if data.version > CURRENT_VERSION {
+        if data.version > LEGACY_TAG_VERSION {
             return Err(StoreError::FutureVersion {
                 found: data.version,
                 supported: CURRENT_VERSION,
             });
         }
 
-        // 旧文件在读取时就升到当前版本：只补字段不升版本号的话，文件会被
-        // 一直写回旧版本，旧程序照旧能打开它，并静默丢掉不认识的字段。
-        if data.version < CURRENT_VERSION {
+        if data.version == LEGACY_TAG_VERSION {
+            // 标签功能已经移除。文件里真存着标签就停手，只处理「用过版本 2、
+            // 但没有留下任何标签」这一种文件：把它降回来不丢任何东西。
+            if raw_has_tags(&raw) {
+                return Err(StoreError::TagDataPresent);
+            }
             warnings.push(format!(
-                "数据文件版本为 {}，已按版本 {} 读取并升级。",
+                "数据文件版本为 {}（标签功能已移除），已按版本 {} 读取并降级。",
                 data.version, CURRENT_VERSION
             ));
             data.version = CURRENT_VERSION;
@@ -380,7 +413,6 @@ mod tests {
             created_at: "2026-09-23T14:04:00.000Z".to_string(),
             updated_at: "2026-09-23T14:04:00.000Z".to_string(),
             images: vec!["attachments/abc.png".to_string()],
-            tags: vec!["筛选".to_string(), "评审".to_string()],
         });
         store.save(&data).unwrap();
 
@@ -422,7 +454,10 @@ mod tests {
         fs::create_dir_all(store.dir()).unwrap();
         fs::write(
             store.data_path(),
-            format!(r#"{{"version":{},"groups":[],"tasks":[]}}"#, CURRENT_VERSION + 1),
+            format!(
+                r#"{{"version":{},"groups":[],"tasks":[]}}"#,
+                LEGACY_TAG_VERSION + 1
+            ),
         )
         .unwrap();
 
@@ -430,7 +465,7 @@ mod tests {
         assert!(matches!(err, StoreError::FutureVersion { .. }));
 
         let mut future = default_data();
-        future.version = CURRENT_VERSION + 1;
+        future.version = LEGACY_TAG_VERSION + 1;
         let save_err = store.save(&future).unwrap_err();
         assert!(matches!(save_err, StoreError::FutureVersion { .. }));
     }
@@ -485,42 +520,21 @@ mod tests {
     }
 
     #[test]
-    fn tags_survive_a_round_trip() {
+    fn legacy_tag_version_file_without_tags_is_downgraded_on_load() {
         let (_dir, store) = store();
         fs::create_dir_all(store.dir()).unwrap();
         fs::write(
             store.data_path(),
-            br#"{"version":2,"groups":[],"tasks":[{"id":"t1","tags":["\u7b5b\u9009","\u8bc4\u5ba1"]}]}"#,
-        )
-        .unwrap();
-
-        let data = store.load().unwrap().data;
-        assert_eq!(data.tasks[0].tags, vec!["筛选".to_string(), "评审".to_string()]);
-
-        store.save(&data).unwrap();
-
-        let raw = fs::read_to_string(store.data_path()).unwrap();
-        assert!(raw.contains("\"tags\""), "标签字段没有写回文件：{raw}");
-        assert!(raw.contains("筛选"), "标签内容丢了：{raw}");
-        assert!(raw.contains("评审"), "标签内容丢了：{raw}");
-    }
-
-    #[test]
-    fn old_version_file_is_upgraded_on_load() {
-        let (_dir, store) = store();
-        fs::create_dir_all(store.dir()).unwrap();
-        fs::write(
-            store.data_path(),
-            br#"{"version":1,"groups":[],"tasks":[{"id":"t1","tags":["\u7b5b\u9009"]}]}"#,
+            br#"{"version":2,"groups":[],"tasks":[{"id":"t1","text":"\u65e7\u6570\u636e"}]}"#,
         )
         .unwrap();
 
         let outcome = store.load().unwrap();
         assert_eq!(outcome.data.version, CURRENT_VERSION);
-        assert_eq!(outcome.data.tasks[0].tags, vec!["筛选".to_string()]);
+        assert_eq!(outcome.data.tasks[0].text, "旧数据");
         assert!(
-            outcome.warnings.iter().any(|line| line.contains("升级")),
-            "升级这件事得告诉用户：{:?}",
+            outcome.warnings.iter().any(|line| line.contains("降级")),
+            "降级这件事得告诉用户：{:?}",
             outcome.warnings
         );
 
@@ -528,24 +542,45 @@ mod tests {
         let raw = fs::read_to_string(store.data_path()).unwrap();
         assert!(
             raw.contains(&format!("\"version\": {CURRENT_VERSION}")),
-            "升级后的版本号没有写回文件：{raw}"
+            "降级后的版本号没有写回文件：{raw}"
         );
     }
 
     #[test]
-    fn missing_tags_reads_as_empty_list() {
+    fn legacy_tag_version_file_with_tags_is_refused() {
         let (_dir, store) = store();
         fs::create_dir_all(store.dir()).unwrap();
         fs::write(
             store.data_path(),
-            br#"{"version":1,"groups":[],"tasks":[{"id":"t1","text":"\u65e7\u6570\u636e"}]}"#,
+            br#"{"version":2,"groups":[],"tasks":[{"id":"t1","tags":["\u7b5b\u9009"]}]}"#,
         )
         .unwrap();
 
-        let data = store.load().unwrap().data;
-        assert!(data.tasks[0].tags.is_empty());
+        let err = store.load().unwrap_err();
 
-        store.save(&data).unwrap();
+        assert!(matches!(err, StoreError::TagDataPresent));
+        assert!(err.to_string().contains("标签"));
+        // 拒绝的是「写回」，文件本身不该被碰。
+        let raw = fs::read_to_string(store.data_path()).unwrap();
+        assert!(raw.contains("tags"), "原始文件被改动了：{raw}");
+    }
+
+    #[test]
+    fn legacy_tag_version_file_with_empty_tags_is_downgraded() {
+        let (_dir, store) = store();
+        fs::create_dir_all(store.dir()).unwrap();
+        fs::write(
+            store.data_path(),
+            br#"{"version":2,"groups":[],"tasks":[{"id":"t1","tags":[]}]}"#,
+        )
+        .unwrap();
+
+        let outcome = store.load().unwrap();
+
+        assert_eq!(outcome.data.version, CURRENT_VERSION);
+        store.save(&outcome.data).unwrap();
+        let raw = fs::read_to_string(store.data_path()).unwrap();
+        assert!(!raw.contains("tags"), "空标签字段应该顺手清掉：{raw}");
     }
 
     #[test]
