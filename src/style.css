@@ -294,6 +294,37 @@ button {
   line-height: 1.7;
 }
 
+/* 错误页上的出路：界面都起不来时，这里得能自己把程序换掉。 */
+.boot-error__action {
+  margin-top: 18px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.boot-error__action:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.boot-error__action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.boot-error .boot-error__status {
+  margin-top: 10px;
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+}
+
 /* ==========================================================================
    整体骨架
    ========================================================================== */

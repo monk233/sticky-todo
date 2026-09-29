@@ -28,6 +28,12 @@ function fileSource(path) {
   return api?.core?.convertFileSrc ? api.core.convertFileSrc(path) : path;
 }
 
+/**
+ * 启动失败的兜底页。
+ *
+ * 数据文件读不出来时所有界面都渲染不了，所以这一页必须自带出路：程序版本比
+ * 数据旧是最常见的失败原因，那就得能在这里检查更新、把程序换掉再重启。
+ */
 function showBanner(message) {
   if (bannerShown) return;
   bannerShown = true;
@@ -42,7 +48,61 @@ function showBanner(message) {
   body.textContent = message;
 
   box.append(title, body);
+
+  const invoke = tauriApi()?.core?.invoke;
+  if (invoke) {
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "boot-error__action";
+    action.textContent = "检查更新";
+
+    const status = document.createElement("p");
+    status.className = "boot-error__status";
+
+    action.addEventListener("click", () => {
+      void runUpdateFromBanner(invoke, action, status);
+    });
+
+    box.append(action, status);
+  }
+
   host.replaceChildren(box);
+}
+
+/**
+ * 错误页上的更新流程：检查 → 下载 → 替换重启。
+ *
+ * 这三步只用后端自己的设置与数据目录，不需要读任务数据，所以界面起不来的
+ * 时候照样能走完。
+ */
+async function runUpdateFromBanner(invoke, action, status) {
+  action.disabled = true;
+
+  try {
+    status.textContent = "正在检查…";
+    const result = await invoke("check_update");
+
+    if (!result.update) {
+      status.textContent = "已经是最新版本（" + (result.currentVersion ?? "—") + "）。";
+      action.disabled = false;
+      return;
+    }
+
+    const remote = result.update;
+    status.textContent = "发现 " + remote.version + "，正在下载…";
+
+    const downloaded = await invoke("download_update", {
+      version: remote.version,
+      url: remote.downloadUrl,
+      sha256: remote.sha256 ?? null,
+    });
+
+    status.textContent = "已下载 " + remote.version + "，正在替换并重启…";
+    await invoke("install_update", { path: downloaded.path });
+  } catch (error) {
+    status.textContent = "更新失败：" + String(error);
+    action.disabled = false;
+  }
 }
 
 window.addEventListener("error", (event) => {
