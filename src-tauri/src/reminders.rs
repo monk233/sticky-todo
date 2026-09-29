@@ -284,12 +284,17 @@ unsafe fn write_shortcut(
         },
     };
 
-    // SetValue 会把值拷进属性存储，随后这块临时内存就能还回去了。
-    let stored = store
-        .SetValue(&PKEY_APP_USER_MODEL_ID, &value)
-        .and_then(|()| store.Commit());
-    CoTaskMemFree(Some(raw as *const core::ffi::c_void));
-    stored?;
+    // 这块内存交给属性存储去管，成功后**不能**再自己释放：Shell 的实现会接管
+    // pwszVal，等属性存储销毁时由它释放。曾经在这里补了一次 CoTaskMemFree，
+    // 两边各放一次就成了 double free，表现为启动时偶发的 0xc0000374 堆损坏
+    // （复现用例见本文件的 write_shortcut_survives_repeated_writes）。
+    if let Err(err) = store.SetValue(&PKEY_APP_USER_MODEL_ID, &value) {
+        // 没被接管，那就还归我们自己收尾。
+        CoTaskMemFree(Some(raw as *const core::ffi::c_void));
+        return Err(err);
+    }
+
+    store.Commit()?;
 
     let file: IPersistFile = link.cast()?;
     file.Save(&HSTRING::from(link_path.to_string_lossy().as_ref()), true)?;
@@ -372,6 +377,35 @@ mod tests {
             due_ms,
             text: text.to_string(),
         }
+    }
+
+    /// 反复写同一个快捷方式，看这段 COM 代码本身会不会把堆写坏。
+    ///
+    /// 1.5.1 首次运行时崩过一次 0xc0000374（堆损坏），故障栈落在 ntdll，
+    /// 而这条路径是应用里唯一手工操作原生内存的地方。把它压到循环里跑，
+    /// 能在不依赖偶发时机的前提下给出「这段代码是否可疑」的答案。
+    #[test]
+    #[cfg(windows)]
+    fn write_shortcut_survives_repeated_writes() {
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+
+        let dir = tempfile::tempdir().unwrap();
+        let exe = std::env::current_exe().unwrap();
+        let link = dir.path().join("诊断.lnk");
+
+        unsafe {
+            // 已经初始化过就会失败，两种模式都能用，忽略返回值。
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+            // 重复够多次才抓得稳：堆损坏要等到下一次 COM 调用才被检测出来，
+            // 只跟一次调用是看不出来的。
+            for round in 0..30 {
+                write_shortcut(&exe, &link)
+                    .unwrap_or_else(|err| panic!("第 {round} 次写入失败：{err}"));
+            }
+        }
+
+        assert!(link.exists());
     }
 
     #[test]
