@@ -3422,8 +3422,11 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-notification",
+ "tauri-winrt-notification",
  "tempfile",
  "ureq",
+ "windows 0.62.2",
+ "winreg 0.10.1",
 ]
 
 [[package]]

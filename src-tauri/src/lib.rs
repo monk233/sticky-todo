@@ -804,6 +804,15 @@ pub fn run() {
                 quitting: AtomicBool::new(false),
             });
 
+            // 通知卡片上的名字与图标靠自己登记：免安装时没有安装器代劳，
+            // 少了这一步 WinRT 会借 PowerShell 的身份发通知。
+            #[cfg(windows)]
+            {
+                let icon = reminders::materialize_icon(handle);
+                reminders::register_aumid(icon.as_deref());
+                reminders::ensure_start_menu_shortcut();
+            }
+
             // 提醒计划由前端推过来，这里起一个常驻线程按点响。
             let reminders = reminders::new_shared();
             app.manage(reminders.clone());

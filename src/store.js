@@ -895,6 +895,22 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     notify();
   }
 
+  /** 通知里点了「延后」：把到期时间往后推一段，顺带把新计划推回后端。 */
+  function snoozeTask(taskId, minutes) {
+    const task = findTask(taskId);
+    if (!task || !task.dueAt) return;
+
+    const due = new Date(task.dueAt).getTime();
+    if (!Number.isFinite(due) || !Number.isFinite(minutes) || minutes <= 0) return;
+
+    task.dueAt = new Date(due + minutes * 60 * 1000).toISOString();
+    task.updatedAt = nowIso();
+    // scheduleSave 会顺手刷新提醒计划，后端因此知道新的到期时刻。
+    scheduleSave();
+    toast(`已延后 ${minutes} 分钟。`);
+    notify();
+  }
+
   /** 把「未完成 + 有到期时间」的任务推给后端，由它按点提醒。 */
   async function pushReminders() {
     const items = data.tasks
@@ -1047,6 +1063,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     setDue,
     setRepeat,
     clearDue,
+    snoozeTask,
     pushReminders,
     pushTraySummary,
     applyUpdateProgress,

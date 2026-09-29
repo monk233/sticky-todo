@@ -33,6 +33,21 @@ hex = "0.4"
 # 别的后端必须跑 update::tests::real_endpoint_is_reachable 验证过才算数。
 ureq = "2"
 
+[target.'cfg(windows)'.dependencies]
+# 自己发 WinRT toast：要自定义 AUMID，还要「延后」按钮的回调，插件两样都不给。
+tauri-winrt-notification = "0.8"
+# 免安装的应用没有安装器代劳，AUMID 只能自己登记到 HKCU。
+winreg = "0.10"
+# 写开始菜单快捷方式用：通知卡片那行名字只认快捷方式上的 AUMID。
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_PropertiesSystem",
+] }
+
 [dev-dependencies]
 tempfile = "3"
 

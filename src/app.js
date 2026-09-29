@@ -123,6 +123,11 @@ async function main() {
       store.patchUi({ settingsOpen: true, settingsFresh: true });
       void store.checkUpdate({ manual: true });
     });
+    await api.event.listen("app://reminder-snooze", (event) => {
+      // 通知里点了「延后」：后端只回 id 和分钟数，改到期时间还得前端来。
+      const payload = event.payload ?? {};
+      store.snoozeTask(String(payload.id ?? ""), Number(payload.minutes));
+    });
   }
 
   await store.init();
