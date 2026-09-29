@@ -1459,34 +1459,6 @@ mark.hit {
   color: var(--text);
 }
 
-/* 没有到期时间时的常显入口：淡，但看得见 */
-.due-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 8px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--text-faint);
-  font: inherit;
-  font-size: var(--text-xs);
-  cursor: pointer;
-  transition: border-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-
-.due-add:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.due-add__icon {
-  width: 12px;
-  height: 12px;
-  opacity: 0.8;
-}
-
 .due-badge__icon {
   width: 12px;
   height: 12px;
@@ -1533,6 +1505,11 @@ mark.hit {
   outline: none;
   /* 让原生的日期／时间选择器在深色主题下也别刺眼 */
   color-scheme: light dark;
+}
+
+/* 日期／时刻输入框整块都能点开原生选择器，指针要给出「这里可以点」的提示。 */
+.due-editor__input {
+  cursor: pointer;
 }
 
 .due-editor__count {

@@ -180,6 +180,23 @@ export function createInteraction({ host, store, invoke }) {
     }
   }
 
+  /**
+   * 打开原生日期／时间选择器。
+   *
+   * 原生输入框只有点右侧那个小图标才弹面板，点框体本身只是聚焦到某一段，
+   * 用起来得先瞄准图标。这里在点击时直接调 showPicker()，把整块输入框变成热区。
+   * 旧内核没有这个方法，面板已经打开或元素已不在文档里时也会抛错，
+   * 一律静默退回原生点击行为。
+   */
+  function openNativePicker(input) {
+    if (typeof input.showPicker !== "function") return;
+    try {
+      input.showPicker();
+    } catch {
+      // 忽略：交给原生行为处理。
+    }
+  }
+
   function handleClick(event) {
     const target = event.target.closest("[data-action]");
     if (!target || !host.contains(target)) return;
@@ -209,10 +226,14 @@ export function createInteraction({ host, store, invoke }) {
       case "editor":
       case "group-editor":
       case "search":
-      case "due-date":
-      case "due-time":
       case "due-repeat":
       case "due-every":
+        return;
+
+      // 点日期／时刻输入框的任意位置都弹出原生选择器，不必去够右边那个小图标。
+      case "due-date":
+      case "due-time":
+        openNativePicker(target);
         return;
 
       case "edit-due":

@@ -227,34 +227,14 @@ function renderRichText(text, query) {
 }
 
 /**
- * 到期入口。
+ * 到期徽章。
  *
- * 没有到期时间时给一个常显的淡色按钮，有到期时间时把徽章本身做成按钮：
- * 工具区那排按钮平时是透明的，到期这种常用入口不该藏在悬停里。
+ * 没有到期时间时不渲染任何东西：设置到期的入口只留在工具栏那排按钮的
+ * 日历图标上，正文里不再另给一个按钮。
  */
-function renderDue(task, settings = {}) {
+function renderDue(task) {
   const due = parseDue(task.dueAt);
-
-  if (!due) {
-    // 已完成的任务、以及开了「隐藏任务操作按钮」时，就别再塞这个入口了。
-    if (task.done || settings.hideActions) return null;
-
-    return h(
-      "div",
-      { class: "task__due" },
-      h(
-        "button",
-        {
-          class: "due-add",
-          type: "button",
-          dataset: { action: "edit-due", id: task.id },
-          title: "设置到期时间",
-        },
-        h("span", { class: "due-add__icon", html: icons.calendar }),
-        "设置到期"
-      )
-    );
-  }
+  if (!due) return null;
 
   const classes = ["due-badge"];
   if (isOverdue(task, new Date())) classes.push("is-overdue");
@@ -390,7 +370,7 @@ function renderTask(task, view, ctx, { groupName = "" } = {}) {
       : null,
     h("div", { class: "task__text" }, renderRichText(task.text, view.query)),
     renderThumbs(task, assetUrl),
-    renderDue(task, settings),
+    renderDue(task),
     ui.dueEditorTaskId === task.id ? renderDueEditor(task) : null,
     renderTaskMeta(task, settings)
   );
