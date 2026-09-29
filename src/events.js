@@ -4,6 +4,7 @@
 // 编辑器在每次重建 DOM 之后需要恢复焦点与光标位置，这一步也在这里做。
 
 import { repeatFromPreset } from "./model.js";
+import { createDragLayer } from "./dragdrop.js";
 
 const MODIFIER_ONLY = new Set(["Control", "Shift", "Alt", "Meta", "CapsLock", "Dead"]);
 
@@ -256,6 +257,22 @@ export function createInteraction({ host, store, invoke }) {
         store.patchUi({ settingsOpen: false, recordingHotkey: false });
         return;
 
+      case "undo":
+        store.undo();
+        return;
+
+      case "scan-orphans":
+        void store.scanOrphans();
+        return;
+
+      case "delete-orphans":
+        store.deleteOrphans();
+        return;
+
+      case "export-markdown":
+        void store.exportMarkdown();
+        return;
+
       case "select-group":
         store.selectGroup(id);
         return;
@@ -500,6 +517,15 @@ export function createInteraction({ host, store, invoke }) {
   function handleKeyDown(event) {
     const ui = store.getUi();
 
+    // 拖拽期间只认 Esc：作废这次拖动，别的键一概不响应。
+    if (dragLayer.isDragging()) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dragLayer.cancel();
+      }
+      return;
+    }
+
     if (ui.recordingHotkey) {
       event.preventDefault();
       if (event.key === "Escape") {
@@ -577,6 +603,14 @@ export function createInteraction({ host, store, invoke }) {
         event.preventDefault();
         store.patchUi({ previewImage: null });
       }
+      return;
+    }
+
+    // 编辑态与到期面板里的输入框在上面就 return 了，所以这里的 Ctrl + Z
+    // 只作用于「不在输入」的情形，不会把 input 自己的文本撤销抢走。
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      store.undo();
       return;
     }
 
@@ -794,6 +828,18 @@ export function createInteraction({ host, store, invoke }) {
     }
   }
 
+  const dragLayer = createDragLayer({
+    host,
+    store,
+    // 只有分组视图才让拖：降平列表（全部待办、今天、逾期、本周、搜索结果）
+    // 的顺序由到期时间决定，拖了界面也不会动。设置面板与图片预览挡在前面
+    // 时同理不启用。
+    enabled: () => {
+      const ui = store.getUi();
+      return ui.view.kind === "group" && ui.query === "" && !ui.settingsOpen && !ui.previewImage;
+    },
+  });
+
   host.addEventListener("click", handleClick);
   host.addEventListener("paste", handlePaste);
   host.addEventListener("focusout", handleFocusOut);
@@ -814,6 +860,8 @@ export function createInteraction({ host, store, invoke }) {
     restoreFocus();
     restoreScroll();
     clearEntering();
+    // 重建把整棵树换掉了，占位条与浮层都不在新树里，这次拖动作废。
+    dragLayer.cancel();
   }
 
   return { beforeRender, afterRender };

@@ -5,14 +5,21 @@
 
 import {
   DEFAULT_SETTINGS,
+  cloneSnapshot,
   createEmptyData,
+  formatBytes,
   formatStamp,
   isDueToday,
   isOverdue,
   nextDueAt,
+  pad2,
   parseLocalDateTime,
+  planDrop,
+  pushSnapshot,
   resolveView,
   sortTasks,
+  takeSnapshot,
+  toMarkdown,
   visibleTasks,
 } from "./model.js";
 import {
@@ -92,6 +99,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
 
   const ui = {
     activeGroupId: null,
+    exporting: false,
     cursorTaskId: null,
     editingTaskId: null,
     editingGroupId: null,
@@ -108,6 +116,16 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     view: { kind: "group" },
     query: "",
     dueEditorTaskId: null,
+    orphans: {
+      /** idle | scanning | ready | deleting */
+      status: "idle",
+      files: [],
+      totalBytes: 0,
+      skipped: 0,
+      /** 删除按钮的第二次确认是否已经点亮。 */
+      confirming: false,
+      error: "",
+    },
     update: {
       autoCheck: true,
       endpoint: "",
@@ -131,8 +149,8 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
   const getUi = () => ui;
   const getDataDir = () => dataDir;
 
-  function toast(text, kind = "info") {
-    const entry = { id: ++toastSeq, text, kind, fresh: true };
+  function toast(text, kind = "info", extra = {}) {
+    const entry = { id: ++toastSeq, text, kind, fresh: true, ...extra };
     ui.toasts = [...ui.toasts, entry];
     notify();
     setTimeout(() => {
@@ -182,12 +200,80 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     );
   }
 
+  // ---- 撤销 ----------------------------------------------------------
+
+  let undoStack = [];
+  let applyingUndo = false;
+
+  /**
+   * 改动分组或任务之前压一份快照。
+   *
+   * 调用位置很讲究：要在「确认这次真的要改」之后、真正改之前。越界就直接
+   * return 的分支不该留下一步空的撤销；一次操作改了好几处（删分组连带删掉
+   * 组里所有任务）也只压一份，否则撤销要按很多次才回得到原样。
+   *
+   * 快照只含分组与任务，不含设置：撤主题、撤布局不是这里要管的事。
+   */
+  function pushUndo(label) {
+    if (applyingUndo) return;
+    undoStack = pushSnapshot(undoStack, {
+      label,
+      groups: cloneSnapshot(data.groups),
+      tasks: cloneSnapshot(data.tasks),
+      activeGroupId: ui.activeGroupId,
+      cursorTaskId: ui.cursorTaskId,
+    });
+  }
+
+  /** 撤回上一步。栈空时只提示，不当成出错。 */
+  function undo() {
+    const taken = takeSnapshot(undoStack);
+    if (!taken) {
+      toast("没有可撤销的操作。", "warn");
+      return false;
+    }
+
+    undoStack = taken.rest;
+
+    applyingUndo = true;
+    data.groups = taken.snapshot.groups;
+    data.tasks = taken.snapshot.tasks;
+    ui.activeGroupId = taken.snapshot.activeGroupId;
+    ui.cursorTaskId = taken.snapshot.cursorTaskId;
+    // 撤销出来的数据可能与正在进行的编辑对不上：那几条任务也许已经不在
+    // 了，先把这些状态清干净再让渲染层接手。
+    ui.editingTaskId = null;
+    ui.editingGroupId = null;
+    ui.confirmDeleteGroupId = null;
+    ui.dueEditorTaskId = null;
+    applyingUndo = false;
+
+    // 顺带把提醒计划与托盘摘要刷成撤销后的样子。
+    scheduleSave();
+    notify();
+
+    // 还能接着撤的时候在提示条上留个入口。
+    toast(`已撤销：${taken.snapshot.label}`, "info", { undo: undoStack.length > 0 });
+    return true;
+  }
+
   // ---- 持久化与初始化 -------------------------------------------------
 
   async function reload() {
     const result = await invoke("load_data");
     data = normalizeData(result.data);
     if (result.dataDir) dataDir = result.dataDir;
+
+    // 换了数据来源，旧栈指向的是另一份数据，留着会串台。
+    undoStack = [];
+
+    // 附件清单同理：那是上一个数据目录的扫描结果。
+    ui.orphans.status = "idle";
+    ui.orphans.files = [];
+    ui.orphans.totalBytes = 0;
+    ui.orphans.skipped = 0;
+    ui.orphans.confirming = false;
+    ui.orphans.error = "";
 
     const ids = new Set(data.groups.map((group) => group.id));
     if (!ui.activeGroupId || !ids.has(ui.activeGroupId)) {
@@ -335,6 +421,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
       name: normalizeGroupName(name),
       order: maxOrder + 1,
     };
+    pushUndo("新建分组");
     data.groups.push(group);
     ui.activeGroupId = group.id;
     ui.editingGroupId = group.id;
@@ -372,6 +459,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     const next = typed === "" ? normalizeGroupName(group.name) : typed;
 
     if (next !== group.name) {
+      pushUndo("重命名分组");
       group.name = next;
       scheduleSave();
     }
@@ -386,6 +474,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     const target = index + delta;
     if (index < 0 || target < 0 || target >= ordered.length) return;
 
+    pushUndo("移动分组");
     const [moved] = ordered.splice(index, 1);
     ordered.splice(target, 0, moved);
     ordered.forEach((group, position) => {
@@ -412,6 +501,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
       return;
     }
 
+    pushUndo("删除分组");
     const [removed] = data.groups.splice(index, 1);
     const affected = data.tasks.filter((task) => task.groupId === id).length;
     data.tasks = data.tasks.filter((task) => task.groupId !== id);
@@ -468,6 +558,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
       repeat: null,
     };
 
+    pushUndo("新建待办");
     data.tasks.push(task);
     ui.activeGroupId = groupId;
     ui.cursorTaskId = task.id;
@@ -513,6 +604,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     }
 
     if (next !== task.text) {
+      pushUndo("修改正文");
       task.text = next;
       task.updatedAt = nowIso();
       scheduleSave();
@@ -525,6 +617,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     if (!task) return;
 
     const wasDone = task.done;
+    pushUndo(wasDone ? "取消完成" : "勾选完成");
     task.done = !task.done;
     task.updatedAt = nowIso();
     ui.cursorTaskId = id;
@@ -574,6 +667,8 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
   function removeTask(id, { silent = false } = {}) {
     const index = data.tasks.findIndex((task) => task.id === id);
     if (index < 0) return;
+    // silent 是内部清理（新建之后一个字没写就丢弃），不算用户的一次操作。
+    if (!silent) pushUndo("删除待办");
     const [removed] = data.tasks.splice(index, 1);
     if (ui.cursorTaskId === id) ui.cursorTaskId = null;
     if (ui.editingTaskId === id) ui.editingTaskId = null;
@@ -591,6 +686,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     const target = index + delta;
     if (index < 0 || target < 0 || target >= ordered.length) return;
 
+    pushUndo("移动待办");
     const [moved] = ordered.splice(index, 1);
     ordered.splice(target, 0, moved);
     ordered.forEach((item, position) => {
@@ -601,11 +697,54 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     notify();
   }
 
+  /**
+   * 拖拽落点：改分组、改顺序。
+   *
+   * 定位怎么算是 model.js 的 planDrop 的事，这里只负责压撤销、套用与保存。
+   * 返回是否真的动了数据 —— 落点与原来一致时什么都不做。
+   */
+  function dropTask(taskId, { groupId, beforeTaskId = null }) {
+    const changes = planDrop(
+      { groups: data.groups, tasks: data.tasks },
+      { taskId, groupId, beforeTaskId }
+    );
+    if (changes.length === 0) return false;
+
+    const task = findTask(taskId);
+    if (!task) return false;
+
+    const groupChanged = task.groupId !== groupId;
+
+    pushUndo("移动待办");
+
+    for (const change of changes) {
+      const item = findTask(change.id);
+      if (!item) continue;
+      item.groupId = change.groupId;
+      item.order = change.order;
+    }
+
+    // 只有被拖的那一条算「更新过」：顺移的那些只是顺序变了。
+    task.updatedAt = nowIso();
+    ui.cursorTaskId = taskId;
+
+    scheduleSave();
+    notify();
+
+    if (groupChanged) {
+      const group = data.groups.find((item) => item.id === groupId);
+      toast(`已移动到「${group ? group.name : "分组"}」。`);
+    }
+
+    return true;
+  }
+
   function addImages(taskId, relPaths) {
     const task = findTask(taskId);
     if (!task || relPaths.length === 0) return;
     const fresh = relPaths.filter((rel) => !task.images.includes(rel));
     if (fresh.length === 0) return;
+    pushUndo("添加图片");
     task.images = [...task.images, ...fresh];
     task.updatedAt = nowIso();
     scheduleSave();
@@ -615,6 +754,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
   function removeImage(taskId, relPath) {
     const task = findTask(taskId);
     if (!task) return;
+    if (task.images.includes(relPath)) pushUndo("移除图片");
     task.images = task.images.filter((rel) => rel !== relPath);
     task.updatedAt = nowIso();
     scheduleSave();
@@ -673,6 +813,131 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
   function setQuery(text) {
     ui.query = String(text ?? "");
     ui.cursorTaskId = firstVisibleId();
+    notify();
+  }
+
+  // ---- 附件清理 --------------------------------------------------------
+
+  let confirmOrphanTimer = null;
+
+  /** 前端这边知道的引用集合：所有任务里记着的图片路径。 */
+  function attachmentKeep() {
+    const keep = new Set();
+    for (const task of data.tasks) {
+      for (const rel of task.images ?? []) keep.add(rel);
+    }
+    return [...keep];
+  }
+
+  function clearOrphanConfirm() {
+    if (confirmOrphanTimer !== null) {
+      clearTimeout(confirmOrphanTimer);
+      confirmOrphanTimer = null;
+    }
+    ui.orphans.confirming = false;
+  }
+
+  /** 扫一遍附件目录，列出不再被任何任务引用的图片。 */
+  async function scanOrphans() {
+    clearOrphanConfirm();
+    ui.orphans.status = "scanning";
+    ui.orphans.error = "";
+    notify();
+
+    try {
+      const result = await invoke("scan_orphan_attachments", { keep: attachmentKeep() });
+      ui.orphans.files = result.orphans ?? [];
+      ui.orphans.totalBytes = result.totalBytes ?? 0;
+      ui.orphans.skipped = result.skipped ?? 0;
+      ui.orphans.status = "ready";
+    } catch (error) {
+      ui.orphans.status = "idle";
+      ui.orphans.error = String(error);
+      onError(String(error));
+    }
+
+    notify();
+  }
+
+  /** 点两次才真删：中间那次只把按钮点亮，3.2 秒没人接着点就退回去。 */
+  function deleteOrphans() {
+    const orphans = ui.orphans;
+    if (orphans.status !== "ready" || orphans.files.length === 0) return;
+
+    if (!orphans.confirming) {
+      orphans.confirming = true;
+      notify();
+
+      if (confirmOrphanTimer !== null) clearTimeout(confirmOrphanTimer);
+      confirmOrphanTimer = setTimeout(() => {
+        confirmOrphanTimer = null;
+        if (ui.orphans.confirming) {
+          ui.orphans.confirming = false;
+          notify();
+        }
+      }, 3200);
+      return;
+    }
+
+    clearOrphanConfirm();
+    orphans.status = "deleting";
+    notify();
+    void runOrphanDelete();
+  }
+
+  async function runOrphanDelete() {
+    const names = ui.orphans.files.map((file) => file.name);
+
+    try {
+      const report = await invoke("delete_orphan_attachments", {
+        keep: attachmentKeep(),
+        names,
+      });
+      const deleted = report.deleted ?? 0;
+      const failed = report.failed ?? [];
+
+      if (failed.length === 0) {
+        toast(`已清理 ${deleted} 个文件，释放 ${formatBytes(report.freedBytes ?? 0)}。`);
+      } else {
+        toast(`已清理 ${deleted} 个文件，${failed.length} 个失败：${failed[0].reason}`, "warn");
+      }
+    } catch (error) {
+      toast(`清理失败：${String(error)}`, "error");
+      onError(String(error));
+    }
+
+    // 这份清单已经作废（删掉的与没删掉的混在一起），退回初始态让用户重新检查。
+    ui.orphans.files = [];
+    ui.orphans.totalBytes = 0;
+    ui.orphans.status = "idle";
+    notify();
+  }
+
+  // ---- 导出 ------------------------------------------------------------
+
+  /** 把全部待办导成 Markdown，写到用户选定的位置。 */
+  async function exportMarkdown() {
+    if (ui.exporting) return;
+
+    const now = new Date();
+    const stamp = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+
+    ui.exporting = true;
+    notify();
+
+    try {
+      const path = await invoke("export_text", {
+        content: toMarkdown(data, now),
+        defaultName: `待办便签-${stamp}.md`,
+      });
+      // 返回 null 表示用户在保存对话框里取消了，不必打扰他。
+      if (path) toast(`已导出到 ${path}`);
+    } catch (error) {
+      toast(`导出失败：${String(error)}`, "error");
+      onError(String(error));
+    }
+
+    ui.exporting = false;
     notify();
   }
 
@@ -866,7 +1131,10 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     const parsed = parseLocalDateTime(date, timeText);
     if (!parsed) return;
 
-    task.dueAt = parsed.toISOString();
+    const next = parsed.toISOString();
+    if (next !== task.dueAt) pushUndo("设置到期");
+
+    task.dueAt = next;
     task.updatedAt = nowIso();
     scheduleSave();
     notify();
@@ -877,7 +1145,10 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     if (!task) return;
 
     const value = String(repeat ?? "").trim();
-    task.repeat = value === "" ? null : value;
+    const next = value === "" ? null : value;
+    if (next !== task.repeat) pushUndo("设置重复");
+
+    task.repeat = next;
     task.updatedAt = nowIso();
     scheduleSave();
     notify();
@@ -887,6 +1158,9 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
   function clearDue(taskId) {
     const task = findTask(taskId);
     if (!task) return;
+
+    // 本来就空着的时候不留一步空操作：撤销栈只记真的改动。
+    if (task.dueAt !== null || task.repeat !== null) pushUndo("清除到期");
 
     task.dueAt = null;
     task.repeat = null;
@@ -903,6 +1177,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     const due = new Date(task.dueAt).getTime();
     if (!Number.isFinite(due) || !Number.isFinite(minutes) || minutes <= 0) return;
 
+    pushUndo("延后提醒");
     task.dueAt = new Date(due + minutes * 60 * 1000).toISOString();
     task.updatedAt = nowIso();
     // scheduleSave 会顺手刷新提醒计划，后端因此知道新的到期时刻。
@@ -1037,6 +1312,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     flush,
     toast,
     patchUi,
+    undo,
     addGroup,
     selectGroup,
     startRenameGroup,
@@ -1051,6 +1327,7 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     toggleTask,
     removeTask,
     moveTask,
+    dropTask,
     addImages,
     removeImage,
     cycleTask,
@@ -1083,6 +1360,9 @@ export function createStore({ invoke, saveDelay = 300, onChange = () => {}, onEr
     applyRecordedHotkey,
     changeDataDir,
     openDataDir,
+    scanOrphans,
+    deleteOrphans,
+    exportMarkdown,
     quitApp,
     applyHotkey,
   };

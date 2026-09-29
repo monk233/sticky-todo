@@ -538,3 +538,193 @@ export function formatAccelerator(accelerator) {
     );
   return parts.join(" + ");
 }
+
+// ---- 撤销快照栈 ------------------------------------------------------
+
+/** 撤销栈的长度上限，超出的丢掉最旧的那份。 */
+export const UNDO_LIMIT = 50;
+
+/**
+ * 快照要的深拷贝。
+ *
+ * 数据是纯 JSON，没有函数、没有循环引用，structuredClone 够用；老内核上
+ * 没有它时退回 JSON 一趟。
+ */
+export function cloneSnapshot(value) {
+  if (typeof structuredClone === "function") return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * 压一份快照，返回新的栈。
+ *
+ * 不改动传入的数组：栈是 store 里的持有物，就地改会让「压栈失败」这种事
+ * 无从判断。超出上限时丢掉最旧的那些 —— 越早的状态越不可能还有人要回去。
+ */
+export function pushSnapshot(stack, snapshot, limit = UNDO_LIMIT) {
+  const capped = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0;
+  if (capped === 0) return [];
+
+  const next = [...stack, snapshot];
+  return next.length > capped ? next.slice(next.length - capped) : next;
+}
+
+/**
+ * 弹出最新的一份快照。
+ *
+ * 栈空时返回 null，调用方据此提示「没有可撤销的操作」，而不是当作异常。
+ */
+export function takeSnapshot(stack) {
+  if (!Array.isArray(stack) || stack.length === 0) return null;
+  return {
+    snapshot: stack[stack.length - 1],
+    rest: stack.slice(0, -1),
+  };
+}
+
+/**
+ * 文件体积的人话写法：1024 进一位，保留一位小数。
+ *
+ * 字节那一档不带小数 —— 「1.5 B」没有意义。
+ */
+export function formatBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = value;
+  let index = 0;
+
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+
+  return index === 0 ? `${Math.round(size)} B` : `${size.toFixed(1)} ${units[index]}`;
+}
+
+// ---- 导出 ------------------------------------------------------------
+
+/** 一行待办。多行正文的续行缩进两个空格，留在同一个列表项里。 */
+function taskLine(task, now) {
+  const meta = [];
+
+  if (parseDue(task.dueAt)) meta.push(`到期 ${formatStamp(task.dueAt, now)}`);
+  if (parseRepeat(task.repeat)) meta.push(repeatLabel(task.repeat));
+
+  const images = Array.isArray(task.images) ? task.images.length : 0;
+  if (images > 0) meta.push(`${images} 张图片`);
+
+  const text = String(task.text ?? "").trim();
+  const [first, ...rest] = text === "" ? ["（无内容）"] : text.split(/\r?\n/);
+  const suffix = meta.length > 0 ? ` · ${meta.join(" · ")}` : "";
+
+  const head = `${task.done ? "- [x] " : "- [ ] "}${first}${suffix}`;
+  return head + rest.map((line) => `\n  ${line}`).join("");
+}
+
+/**
+ * 把全部分组与待办导成 Markdown。
+ *
+ * 忽略 hideCompleted 与 completedBottom：导出要的是完整而稳定的一份，不跟着
+ * 界面上的显示开关变。顺序沿用分组顺序与组内手动顺序。
+ */
+export function toMarkdown(data, now = new Date()) {
+  const groups = sortGroups(data.groups ?? []);
+  const tasks = data.tasks ?? [];
+  const known = new Set(groups.map((group) => group.id));
+
+  const lines = ["# 待办便签", "", `导出时间：${formatFullStamp(now)}`, ""];
+
+  const pushSection = (title, list) => {
+    if (list.length === 0) return;
+    lines.push(`## ${title}`, "");
+    for (const task of list) lines.push(taskLine(task, now));
+    lines.push("");
+  };
+
+  for (const group of groups) {
+    pushSection(
+      group.name,
+      sortTasks(tasks.filter((task) => task.groupId === group.id), false)
+    );
+  }
+
+  // 指向已不存在分组的任务：另起一节放在最后，免得它们从导出里凭空消失。
+  pushSection(
+    "未命名",
+    sortTasks(tasks.filter((task) => !known.has(task.groupId)), false)
+  );
+
+  return `${lines.join("\n").replace(/\n+$/, "")}\n`;
+}
+
+// ---- 拖拽落点 --------------------------------------------------------
+
+/**
+ * 拖拽落点算成新的定位。
+ *
+ * 返回所有受影响任务的 `{ id, groupId, order }`，由 store 按 id 套用。两个
+ * 分组都要重排：跨组时源分组留下空位，目标分组多出一个位置，各自的 `order`
+ * 都要重新连续起来。
+ *
+ * 落点与当前位置一致时返回空数组 —— 那种拖动没有产生任何效果，不该在撤销栈
+ * 里留一步。
+ */
+export function planDrop(state, { taskId, groupId, beforeTaskId }) {
+  const tasks = state?.tasks ?? [];
+
+  const task = tasks.find((item) => item.id === taskId);
+  if (!task) return [];
+
+  if (!(state?.groups ?? []).some((group) => group.id === groupId)) return [];
+
+  const sourceGroupId = task.groupId;
+
+  // 目标分组当前的顺序，先把自己摘掉：自己本来就可能在这一组里。
+  const targetOrder = sortTasks(
+    tasks.filter((item) => item.groupId === groupId && item.id !== taskId),
+    false
+  );
+
+  let index = targetOrder.length;
+  if (beforeTaskId) {
+    if (beforeTaskId === taskId) return [];
+
+    const found = targetOrder.findIndex((item) => item.id === beforeTaskId);
+    // 落点认不出来（指向别的分组、或者那条已经被删了）时退回末尾。
+    if (found >= 0) index = found;
+  }
+
+  const nextOrder = [...targetOrder];
+  nextOrder.splice(index, 0, task);
+
+  if (sourceGroupId === groupId) {
+    const current = sortTasks(
+      tasks.filter((item) => item.groupId === groupId),
+      false
+    );
+    const unchanged =
+      current.length === nextOrder.length &&
+      current.every((item, at) => item.id === nextOrder[at].id);
+    if (unchanged) return [];
+  }
+
+  const changes = nextOrder.map((item, position) => ({
+    id: item.id,
+    groupId,
+    order: position,
+  }));
+
+  if (sourceGroupId !== groupId) {
+    const rest = sortTasks(
+      tasks.filter((item) => item.groupId === sourceGroupId && item.id !== taskId),
+      false
+    );
+    rest.forEach((item, position) => {
+      changes.push({ id: item.id, groupId: sourceGroupId, order: position });
+    });
+  }
+
+  return changes;
+}

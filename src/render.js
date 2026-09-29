@@ -5,6 +5,7 @@
 
 import { icons } from "./icons.js";
 import {
+  formatBytes,
   formatStamp,
   formatFullStamp,
   formatAccelerator,
@@ -204,6 +205,9 @@ function renderThumbs(task, assetUrl) {
           src: assetUrl(rel),
           alt: "待办图片",
           loading: "lazy",
+          // 缩略图默认可以原生拖拽，那样会在拖动中途触发 pointercancel，
+          // 把我们的拖动手势打断。
+          draggable: "false",
           dataset: { action: "preview-image", rel },
         }),
         h("button", {
@@ -679,6 +683,75 @@ function renderThemeList(ui, settings) {
   );
 }
 
+/** 数据分区里的附件清理：平时只有一颗按钮，扫描之后才长出清单。 */
+function renderOrphanCleanup(ui) {
+  const orphans = ui.orphans;
+  const busy = orphans.status === "scanning" || orphans.status === "deleting";
+
+  const scanButton = h(
+    "button",
+    { class: "ghost-button", type: "button", dataset: { action: "scan-orphans" } },
+    orphans.status === "scanning" ? "正在检查…" : "检查未引用的图片"
+  );
+  if (busy) scanButton.disabled = true;
+
+  const extras = [];
+
+  if (orphans.status === "ready" && orphans.files.length === 0) {
+    extras.push(h("p", { class: "orphans__line" }, "没有未引用的图片。"));
+  }
+
+  if (orphans.status === "ready" && orphans.files.length > 0) {
+    extras.push(
+      h(
+        "p",
+        { class: "orphans__line" },
+        `发现 ${orphans.files.length} 个未引用的图片，共 ${formatBytes(orphans.totalBytes)}。`
+      )
+    );
+
+    if (orphans.skipped > 0) {
+      extras.push(
+        h(
+          "p",
+          { class: "orphans__line orphans__line--faint" },
+          `另有 ${orphans.skipped} 个文件不是图片，已跳过。`
+        )
+      );
+    }
+
+    extras.push(
+      h(
+        "div",
+        { class: "field__actions" },
+        h(
+          "button",
+          {
+            class: orphans.confirming
+              ? "ghost-button ghost-button--danger is-confirming"
+              : "ghost-button ghost-button--danger",
+            type: "button",
+            dataset: { action: "delete-orphans" },
+          },
+          orphans.confirming ? "再点一次确认删除" : "删除这些文件"
+        ),
+        h(
+          "button",
+          { class: "ghost-button", type: "button", dataset: { action: "scan-orphans" } },
+          "重新检查"
+        )
+      ),
+      h("p", { class: "orphans__line orphans__line--faint" }, "删除不可恢复。")
+    );
+  }
+
+  if (orphans.error) {
+    extras.push(h("p", { class: "orphans__line orphans__line--error" }, orphans.error));
+  }
+
+  return h("div", { class: "orphans" }, scanButton, ...extras);
+}
+
 function renderSettings(view, ctx) {
   const { settings } = view;
   const { ui, dataDir } = ctx;
@@ -838,7 +911,42 @@ function renderSettings(view, ctx) {
                 "打开目录"
               )
             ),
-            h("span", { class: "field__hint" }, "备份或同步时，直接复制整个数据目录即可。")
+            h("span", { class: "field__hint" }, "备份或同步时，直接复制整个数据目录即可。"),
+            h(
+              "div",
+              { class: "field field--stack" },
+              h("span", { class: "field__label" }, "未引用的图片"),
+              h(
+                "span",
+                { class: "field__hint" },
+                "删掉的待办不会带走图片文件，它们仍留在数据目录的 attachments 里。"
+              ),
+              renderOrphanCleanup(ui)
+            ),
+            h(
+              "div",
+              { class: "field field--stack" },
+              h("span", { class: "field__label" }, "导出"),
+              h(
+                "span",
+                { class: "field__hint" },
+                "把全部分组与待办导出成一个 Markdown 文件，图片只记张数。"
+              ),
+              h(
+                "div",
+                { class: "field__actions" },
+                h(
+                  "button",
+                  {
+                    class: "ghost-button",
+                    type: "button",
+                    dataset: { action: "export-markdown" },
+                    disabled: ui.exporting,
+                  },
+                  ui.exporting ? "正在导出…" : "导出为 Markdown"
+                )
+              )
+            )
           )
         ),
         h(
@@ -1021,19 +1129,37 @@ function renderLightbox(ctx) {
 
 function renderToasts(ui) {
   if (!ui.toasts || ui.toasts.length === 0) return null;
+
+  // 只有最新一条带动作按钮：连做几次操作后并排出现好几个「撤销」，
+  // 点哪个都不明确。
+  const latest = ui.toasts[ui.toasts.length - 1];
+
   return h(
     "div",
     { class: "toasts", role: "status", "aria-live": "polite" },
-    ui.toasts.map((toast) =>
-      h(
+    ui.toasts.map((toast) => {
+      const row = h(
         "div",
         {
           class: `toast toast--${toast.kind} ${toast.fresh ? "is-entering" : ""}`.trim(),
           dataset: { id: String(toast.id) },
         },
         toast.text
-      )
-    )
+      );
+
+      if (toast.undo && toast.id === latest.id) {
+        row.append(
+          h("button", {
+            class: "toast__action",
+            type: "button",
+            dataset: { action: "undo" },
+            text: "撤销",
+          })
+        );
+      }
+
+      return row;
+    })
   );
 }
 

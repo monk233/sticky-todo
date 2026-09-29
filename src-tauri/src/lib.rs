@@ -4,10 +4,12 @@
 //! - `config`：本机数据目录的位置与更新偏好；
 //! - `store`：data.json 的原子读写；
 //! - `images`：图片导入；
+//! - `attachments`：清理不再被引用的图片；
 //! - `themes`：自定义主题文件的读取；
 //! - `update`：检查更新、下载与自我替换；
 //! - 本文件：把上面五者包装成 IPC 命令，并管理窗口、托盘与全局快捷键。
 
+mod attachments;
 mod config;
 mod images;
 mod reminders;
@@ -394,6 +396,70 @@ fn import_image_bytes(
     images::import_bytes(&dir, &bytes, &ext)
         .map(|rel_path| ImportResult { rel_path })
         .map_err(|e| e.to_string())
+}
+
+// ---- 附件清理 ---------------------------------------------------------
+
+/// 找出 attachments 里不再被引用的图片。keep 是前端持有的引用集合。
+#[tauri::command]
+fn scan_orphan_attachments(
+    state: State<'_, AppState>,
+    keep: Vec<String>,
+) -> Result<attachments::OrphanScan, String> {
+    let dir = current_data_dir(&state);
+    attachments::scan(&dir, &keep).map_err(|e| format!("扫描附件目录失败：{e}"))
+}
+
+/// 删掉用户确认过的那批文件。删除前会用当前的引用集合再验一次。
+#[tauri::command]
+fn delete_orphan_attachments(
+    state: State<'_, AppState>,
+    keep: Vec<String>,
+    names: Vec<String>,
+) -> Result<attachments::DeleteReport, String> {
+    let dir = current_data_dir(&state);
+    attachments::delete(&dir, &keep, &names).map_err(|e| format!("删除未引用附件失败：{e}"))
+}
+
+// ---- 导出 -------------------------------------------------------------
+
+/// UTF-8 无 BOM 写入。记事本与各类 Markdown 阅读器都认这个。
+fn write_text(path: &Path, content: &str) -> std::io::Result<()> {
+    std::fs::write(path, content.as_bytes())
+}
+
+/// 把生成的文本写到用户选定的位置。用户在对话框里取消时返回 None。
+#[tauri::command]
+async fn export_text(
+    app: AppHandle,
+    content: String,
+    default_name: String,
+) -> Result<Option<String>, String> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+
+    app.dialog()
+        .file()
+        .set_file_name(&default_name)
+        .add_filter("Markdown", &["md"])
+        .add_filter("文本", &["txt"])
+        .save_file(move |path| {
+            let _ = sender.send(path);
+        });
+
+    let picked = receiver
+        .recv()
+        .map_err(|e| format!("保存对话框异常：{e}"))?;
+
+    let Some(file) = picked else {
+        return Ok(None);
+    };
+
+    let path = file
+        .into_path()
+        .map_err(|e| format!("保存路径无法使用：{e}"))?;
+
+    write_text(&path, &content).map_err(|e| format!("写入文件失败：{e}"))?;
+    Ok(Some(path.to_string_lossy().to_string()))
 }
 
 /// 用系统文件管理器打开一个目录，不存在时先创建。
@@ -843,6 +909,9 @@ pub fn run() {
             save_data,
             import_image,
             import_image_bytes,
+            scan_orphan_attachments,
+            delete_orphan_attachments,
+            export_text,
             open_data_dir,
             open_themes_dir,
             list_user_themes,
@@ -886,6 +955,29 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_text_lands_utf8_without_bom() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.md");
+
+        write_text(&path, "# 待办便签\n- [ ] 买牛奶").unwrap();
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(!bytes.starts_with(&[0xEF, 0xBB, 0xBF]));
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            "# 待办便签\n- [ ] 买牛奶"
+        );
+    }
+
+    #[test]
+    fn write_text_reports_a_missing_parent_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nope").join("out.md");
+
+        assert!(write_text(&path, "hi").is_err());
+    }
 
     #[test]
     fn default_accelerator_parses() {

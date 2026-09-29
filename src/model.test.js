@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 
 import {
   DEFAULT_SETTINGS,
+  UNDO_LIMIT,
   attachmentPath,
   buildView,
+  cloneSnapshot,
   createEmptyData,
   formatAccelerator,
+  formatBytes,
   formatFullStamp,
   formatStamp,
   groupCounts,
@@ -17,6 +20,8 @@ import {
   matchTask,
   nextDueAt,
   parseLocalDateTime,
+  planDrop,
+  pushSnapshot,
   repeatFromPreset,
   repeatLabel,
   repeatPreset,
@@ -24,7 +29,9 @@ import {
   sortGroups,
   sortTasks,
   splitDueForInputs,
+  takeSnapshot,
   tasksForGroup,
+  toMarkdown,
   visibleTasks,
 } from "./model.js";
 
@@ -593,4 +600,310 @@ test("parseLocalDateTime 缺时刻时按早上九点算，日期非法时返回 
 test("splitDueForInputs 对空值给默认时刻", () => {
   assert.deepEqual(splitDueForInputs(null), { date: "", time: "09:00" });
   assert.deepEqual(splitDueForInputs("不是时间"), { date: "", time: "09:00" });
+});
+
+test("pushSnapshot 超限时丢掉最旧的一份", () => {
+  let stack = [];
+  for (let index = 0; index < 5; index += 1) {
+    stack = pushSnapshot(stack, { label: index }, 3);
+  }
+
+  assert.equal(stack.length, 3);
+  assert.deepEqual(
+    stack.map((item) => item.label),
+    [2, 3, 4]
+  );
+});
+
+test("pushSnapshot 不改动传入的栈", () => {
+  const original = [{ label: 0 }];
+  const next = pushSnapshot(original, { label: 1 });
+
+  assert.equal(original.length, 1);
+  assert.equal(next.length, 2);
+  assert.notEqual(next, original);
+});
+
+test("pushSnapshot 的上限非法时返回空栈", () => {
+  const stack = [{ label: 0 }];
+
+  assert.deepEqual(pushSnapshot(stack, { label: 1 }, 0), []);
+  assert.deepEqual(pushSnapshot(stack, { label: 1 }, -3), []);
+  assert.deepEqual(pushSnapshot(stack, { label: 1 }, Number.NaN), []);
+});
+
+test("pushSnapshot 默认按 UNDO_LIMIT 截断", () => {
+  let stack = [];
+  for (let index = 0; index < UNDO_LIMIT + 5; index += 1) {
+    stack = pushSnapshot(stack, { label: index });
+  }
+
+  assert.equal(stack.length, UNDO_LIMIT);
+  assert.equal(stack[0].label, 5);
+  assert.equal(stack[stack.length - 1].label, UNDO_LIMIT + 4);
+});
+
+test("takeSnapshot 空栈返回 null，否则弹出最新一份", () => {
+  assert.equal(takeSnapshot([]), null);
+  assert.equal(takeSnapshot(null), null);
+
+  const stack = [{ label: "第一步" }, { label: "第二步" }];
+  const taken = takeSnapshot(stack);
+
+  assert.equal(taken.snapshot.label, "第二步");
+  assert.equal(taken.rest.length, 1);
+  assert.equal(taken.rest[0].label, "第一步");
+  // rest 必须是新数组，否则 store 里接着压栈会把原来的栈也改掉。
+  assert.notEqual(taken.rest, stack);
+  assert.equal(stack.length, 2);
+});
+
+test("cloneSnapshot 抠出来的快照不受后续改动影响", () => {
+  const data = {
+    groups: [{ id: "g1", name: "待处理" }],
+    tasks: [{ id: "t1", text: "买牛奶" }],
+  };
+  const snapshot = cloneSnapshot(data);
+
+  data.groups[0].name = "改过了";
+  data.tasks.push({ id: "t2", text: "顺手加的" });
+
+  assert.equal(snapshot.groups[0].name, "待处理");
+  assert.equal(snapshot.tasks.length, 1);
+  assert.notEqual(snapshot.groups, data.groups);
+  assert.notEqual(snapshot.tasks[0], data.tasks[0]);
+});
+
+test("formatBytes 按 1024 进位，字节那档不带小数", () => {
+  assert.equal(formatBytes(0), "0 B");
+  assert.equal(formatBytes(-1), "0 B");
+  assert.equal(formatBytes(Number.NaN), "0 B");
+  assert.equal(formatBytes(undefined), "0 B");
+
+  assert.equal(formatBytes(1), "1 B");
+  assert.equal(formatBytes(1023), "1023 B");
+  assert.equal(formatBytes(1024), "1.0 KB");
+  assert.equal(formatBytes(1536), "1.5 KB");
+  assert.equal(formatBytes(1024 * 1024), "1.0 MB");
+  assert.equal(formatBytes(1024 * 1024 * 1024), "1.0 GB");
+});
+
+test("toMarkdown 空数据只有标题与导出时间", () => {
+  const now = new Date(2026, 8, 29, 16, 4);
+
+  const text = toMarkdown({ groups: [], tasks: [] }, now);
+
+  assert.equal(text, "# 待办便签\n\n导出时间：2026-09-29 16:04:00\n");
+});
+
+test("toMarkdown 按分组顺序与组内手动顺序输出", () => {
+  const now = new Date(2026, 8, 29, 16, 4);
+  const data = {
+    groups: [
+      { id: "g2", name: "生活", order: 1 },
+      { id: "g1", name: "工作", order: 0 },
+    ],
+    tasks: [
+      { id: "t3", groupId: "g1", text: "第三", order: 2, done: false },
+      { id: "t1", groupId: "g1", text: "第一", order: 0, done: true },
+      { id: "t2", groupId: "g2", text: "第二", order: 1, done: false },
+    ],
+  };
+
+  const text = toMarkdown(data, now);
+
+  assert.match(text, /## 工作\n\n- \[x\] 第一\n- \[ \] 第三\n\n## 生活\n\n- \[ \] 第二\n/);
+});
+
+test("toMarkdown 把到期、重复与图片张数接在正文之后", () => {
+  const now = new Date(2026, 8, 29, 16, 4);
+  const data = {
+    groups: [{ id: "g1", name: "工作", order: 0 }],
+    tasks: [
+      {
+        id: "t1",
+        groupId: "g1",
+        text: "写设计文档",
+        order: 0,
+        done: false,
+        dueAt: new Date(2026, 8, 30, 9, 0).toISOString(),
+        repeat: "weekly",
+        images: ["attachments/a.png", "attachments/b.png"],
+      },
+    ],
+  };
+
+  const text = toMarkdown(data, now);
+
+  assert.match(text, /- \[ \] 写设计文档 · 到期 09-30 09:00 · 每周 · 2 张图片\n/);
+});
+
+test("toMarkdown 的元信息缺项时不留多余的分隔符", () => {
+  const now = new Date(2026, 8, 29, 16, 4);
+  const data = {
+    groups: [{ id: "g1", name: "工作", order: 0 }],
+    tasks: [
+      {
+        id: "t1",
+        groupId: "g1",
+        text: "只有到期",
+        order: 0,
+        done: false,
+        dueAt: new Date(2026, 8, 30, 9, 0).toISOString(),
+      },
+      { id: "t2", groupId: "g1", text: "什么都没有", order: 1, done: false },
+      {
+        id: "t3",
+        groupId: "g1",
+        text: "规则认不出来",
+        order: 2,
+        done: false,
+        repeat: "every:0:day",
+      },
+    ],
+  };
+
+  const text = toMarkdown(data, now);
+
+  assert.match(text, /- \[ \] 只有到期 · 到期 09-30 09:00\n/);
+  assert.match(text, /- \[ \] 什么都没有\n/);
+  assert.match(text, /- \[ \] 规则认不出来\n/);
+});
+
+test("toMarkdown 的续行缩进两个空格", () => {
+  const now = new Date(2026, 8, 29, 16, 4);
+  const data = {
+    groups: [{ id: "g1", name: "工作", order: 0 }],
+    tasks: [
+      { id: "t1", groupId: "g1", text: "第一行\n第二行\n第三行", order: 0, done: false },
+    ],
+  };
+
+  const text = toMarkdown(data, now);
+
+  assert.match(text, /- \[ \] 第一行\n  第二行\n  第三行\n/);
+});
+
+test("toMarkdown 不为空分组起小节", () => {
+  const now = new Date(2026, 8, 29, 16, 4);
+  const data = {
+    groups: [
+      { id: "g1", name: "空的", order: 0 },
+      { id: "g2", name: "有东西", order: 1 },
+    ],
+    tasks: [{ id: "t1", groupId: "g2", text: "一条", order: 0, done: false }],
+  };
+
+  const text = toMarkdown(data, now);
+
+  assert.ok(!text.includes("## 空的"));
+  assert.match(text, /## 有东西\n\n- \[ \] 一条\n/);
+});
+
+test("toMarkdown 把指向不存在分组的任务放进「未命名」", () => {
+  const now = new Date(2026, 8, 29, 16, 4);
+  const data = {
+    groups: [{ id: "g1", name: "工作", order: 0 }],
+    tasks: [
+      { id: "t1", groupId: "g1", text: "有家的", order: 0, done: false },
+      { id: "t2", groupId: "g-gone", text: "无家的", order: 0, done: false },
+    ],
+  };
+
+  const text = toMarkdown(data, now);
+
+  assert.match(text, /## 未命名\n\n- \[ \] 无家的\n/);
+  assert.ok(text.indexOf("## 工作") < text.indexOf("## 未命名"));
+});
+
+function dropState() {
+  return {
+    groups: [
+      { id: "g1", name: "工作", order: 0 },
+      { id: "g2", name: "生活", order: 1 },
+    ],
+    tasks: [
+      { id: "a", groupId: "g1", order: 0 },
+      { id: "b", groupId: "g1", order: 1 },
+      { id: "c", groupId: "g1", order: 2 },
+      { id: "x", groupId: "g2", order: 0 },
+    ],
+  };
+}
+
+/** 把 planDrop 的结果还原成某个分组里按新 order 排好的 id 序列。 */
+function orderOf(changes, groupId) {
+  return changes
+    .filter((item) => item.groupId === groupId)
+    .sort((a, b) => a.order - b.order)
+    .map((item) => item.id);
+}
+
+test("planDrop 在同组内往后挪", () => {
+  const changes = planDrop(dropState(), { taskId: "a", groupId: "g1", beforeTaskId: "c" });
+
+  assert.deepEqual(orderOf(changes, "g1"), ["b", "a", "c"]);
+});
+
+test("planDrop 在同组内往前挪", () => {
+  const changes = planDrop(dropState(), { taskId: "c", groupId: "g1", beforeTaskId: "a" });
+
+  assert.deepEqual(orderOf(changes, "g1"), ["c", "a", "b"]);
+});
+
+test("planDrop 跨组插到指定行之前，两边都重排", () => {
+  const changes = planDrop(dropState(), { taskId: "a", groupId: "g2", beforeTaskId: "x" });
+
+  assert.deepEqual(orderOf(changes, "g2"), ["a", "x"]);
+  assert.deepEqual(orderOf(changes, "g1"), ["b", "c"]);
+});
+
+test("planDrop 跨组落到末尾", () => {
+  const changes = planDrop(dropState(), { taskId: "a", groupId: "g2", beforeTaskId: null });
+
+  assert.deepEqual(orderOf(changes, "g2"), ["x", "a"]);
+  assert.deepEqual(orderOf(changes, "g1"), ["b", "c"]);
+});
+
+test("planDrop 移到空分组时 order 从 0 开始", () => {
+  const state = dropState();
+  state.groups.push({ id: "g3", name: "空", order: 2 });
+
+  const changes = planDrop(state, { taskId: "a", groupId: "g3", beforeTaskId: null });
+
+  assert.deepEqual(orderOf(changes, "g3"), ["a"]);
+  assert.equal(changes.find((item) => item.id === "a").order, 0);
+  assert.deepEqual(orderOf(changes, "g1"), ["b", "c"]);
+});
+
+test("planDrop 落点与当前位置一致时什么都不改", () => {
+  const state = dropState();
+
+  // 插到自己前面
+  assert.deepEqual(planDrop(state, { taskId: "a", groupId: "g1", beforeTaskId: "a" }), []);
+  // 拖到自己原来那条下一条之前：位置没变
+  assert.deepEqual(planDrop(state, { taskId: "a", groupId: "g1", beforeTaskId: "b" }), []);
+  // 已经在末尾又丢到末尾
+  assert.deepEqual(planDrop(state, { taskId: "c", groupId: "g1", beforeTaskId: null }), []);
+});
+
+test("planDrop 对不存在的任务或分组返回空", () => {
+  const state = dropState();
+
+  assert.deepEqual(planDrop(state, { taskId: "nope", groupId: "g1", beforeTaskId: null }), []);
+  assert.deepEqual(planDrop(state, { taskId: "a", groupId: "gone", beforeTaskId: null }), []);
+});
+
+test("planDrop 的落点指向别的分组时退回末尾", () => {
+  const changes = planDrop(dropState(), { taskId: "a", groupId: "g2", beforeTaskId: "b" });
+
+  assert.deepEqual(orderOf(changes, "g2"), ["x", "a"]);
+});
+
+test("planDrop 只列出受影响的任务", () => {
+  const changes = planDrop(dropState(), { taskId: "a", groupId: "g2", beforeTaskId: null });
+
+  assert.deepEqual(changes.map((item) => item.id).sort(), ["a", "b", "c", "x"]);
+  // 没被碰过的分组不出现在结果里
+  assert.ok(!changes.some((item) => item.groupId !== "g1" && item.groupId !== "g2"));
 });

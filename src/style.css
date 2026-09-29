@@ -655,6 +655,45 @@ button {
   flex: 0 0 auto;
 }
 
+/* 危险动作的次要按钮：附件清理里那两颗。 */
+.ghost-button--danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.ghost-button--danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.ghost-button--danger.is-confirming {
+  background: var(--danger-soft);
+}
+
+/* 未引用的图片：扫描结果与两步确认。 */
+.orphans {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.orphans__line {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+
+.orphans__line--faint {
+  color: var(--text-faint);
+}
+
+.orphans__line--error {
+  color: var(--danger);
+}
+
 .primary-button {
   display: inline-flex;
   align-items: center;
@@ -1457,6 +1496,79 @@ mark.hit {
 .toast--error {
   background: var(--danger);
   color: #ffffff;
+}
+
+/*
+ * 提示条上的动作按钮（目前只有「撤销」）。
+ *
+ * 整条提示是 pointer-events: none 的，免得挡住底下的界面，所以按钮得自己
+ * 把指针事件开回来。
+ */
+.toast__action {
+  margin-left: 10px;
+  padding: 3px 11px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: inherit;
+  font-size: var(--text-sm);
+  vertical-align: middle;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.toast__action:hover {
+  opacity: 0.86;
+}
+
+/* ==========================================================================
+   拖拽
+   ========================================================================== */
+
+body.is-dragging {
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* 被拖的那一行留在原位，做半透明参照。 */
+.task.is-dragging {
+  opacity: 0.4;
+}
+
+/* 跟着指针走的克隆体：挂在 body 下，不受工作区滚动容器裁剪。 */
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 70;
+  margin: 0;
+  list-style: none;
+  pointer-events: none;
+  background: var(--task-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--task-radius);
+  box-shadow: var(--shadow-panel);
+  opacity: 0.92;
+}
+
+/* 落点指示：插进列表里的那一小条。 */
+.drop-marker {
+  display: block;
+  height: 2px;
+  margin: 5px 0;
+  list-style: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+/* 侧栏分组按钮作为落点时的样子。 */
+.group.is-drop-target {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft);
+  color: var(--text);
 }
 
 /* ==========================================================================
