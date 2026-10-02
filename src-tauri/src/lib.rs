@@ -86,6 +86,11 @@ fn toggle_main_window(app: &AppHandle) {
     }
 }
 
+/// 让进程真正退出的唯一入口。
+///
+/// `app.exit(0)` 会先发 `ExitRequested`，而那里的托盘常驻策略会 `prevent_exit`
+/// （见 `run` 的收尾分支）；只有先把 `quitting` 立起来，这次退出才不会被拦下。
+/// 需要退出的地方都走这里，别再直接调 `app.exit`。
 fn quit_app(app: &AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
         state.quitting.store(true, Ordering::SeqCst);
@@ -755,7 +760,9 @@ async fn install_update(app: AppHandle, path: String) -> Result<(), String> {
     .map_err(|error| error.to_string())?;
 
     // 替换脚本已经在等我们退出，把舞台交给它。
-    app.exit(0);
+    // 必须走 quit_app：直接 app.exit 会被 ExitRequested 里的托盘策略拦下，
+    // 进程不退，脚本就永远覆盖不了 exe，界面只会一直卡在「正在重启…」。
+    quit_app(&app);
     Ok(())
 }
 
